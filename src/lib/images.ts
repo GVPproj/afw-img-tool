@@ -175,25 +175,25 @@ async function trimmedLogo(url: string, width: number): Promise<HTMLCanvasElemen
   }
 }
 
-let logos: Promise<[HTMLCanvasElement, HTMLCanvasElement]> | undefined;
-function loadLogos() {
-  // Keep only the two small rasterized fixed assets, never photo data.
-  logos ??= (async (): Promise<[HTMLCanvasElement, HTMLCanvasElement]> => {
-    let island: HTMLCanvasElement | undefined;
-    try {
-      island = await trimmedLogo(new URL('../assets/island-city.svg', import.meta.url).href, 324);
-      const afw = await trimmedLogo(new URL('../assets/Logo-Mark_AFW.svg', import.meta.url).href, 454);
-      return [island, afw];
-    } catch {
-      if (island) releaseCanvas(island);
-      logos = undefined;
+function cachedLogo(url: string, width: number) {
+  // Cache only a fixed asset, never photo data; allow retry after a load failure.
+  let logo: Promise<HTMLCanvasElement> | undefined;
+  return () => {
+    logo ??= trimmedLogo(url, width).catch(() => {
+      logo = undefined;
       throw new Error('The thumbnail logos could not be loaded. Reload the page and try again.');
-    }
-  })();
-  return logos;
+    });
+    return logo;
+  };
 }
 
-function addGrain(context: CanvasRenderingContext2D) {
+const loadIslandLogo = cachedLogo(new URL('../assets/island-city.svg', import.meta.url).href, 324);
+const loadAfwLogo = cachedLogo(new URL('../assets/Logo-Mark_AFW.svg', import.meta.url).href, 454);
+
+// One fixed 1080px noise canvas shared by all renders, with no photo references.
+let grain: HTMLCanvasElement | undefined;
+function getGrain(): HTMLCanvasElement {
+  if (grain) return grain;
   const { element, context: noiseContext } = canvas(SIZE, SIZE, true);
   try {
     const noise = noiseContext.createImageData(SIZE, SIZE);
@@ -213,25 +213,39 @@ function addGrain(context: CanvasRenderingContext2D) {
       }
     }
     noiseContext.putImageData(noise, 0, 0);
-    context.save();
-    try {
-      context.globalCompositeOperation = 'soft-light';
-      if (context.globalCompositeOperation !== 'soft-light') {
-        throw new Error('This browser does not support soft-light image blending.');
-      }
-      context.drawImage(element, 0, 0);
-    } finally {
-      context.restore();
-    }
-  } finally {
+    grain = element;
+    return grain;
+  } catch (error) {
     releaseCanvas(element);
+    throw error;
   }
 }
 
-/** Opaque 1080px PNG. Grain is regenerated for each render and never covers logos. */
-export async function renderThumbnail(photo: Photo, crop: Crop): Promise<Blob> {
+function addGrain(context: CanvasRenderingContext2D) {
+  const noise = getGrain();
+  context.save();
+  try {
+    context.globalCompositeOperation = 'soft-light';
+    if (context.globalCompositeOperation !== 'soft-light') {
+      throw new Error('This browser does not support soft-light image blending.');
+    }
+    context.drawImage(noise, 0, 0);
+  } finally {
+    context.restore();
+  }
+}
+
+/** Opaque 1080px PNG. Stable grain never covers logos; AFW is always included. */
+export async function renderThumbnail(
+  photo: Photo,
+  crop: Crop,
+  { islandCity = true }: { islandCity?: boolean } = {},
+): Promise<Blob> {
   const normalized = clampCrop(crop, photo);
-  const [island, afw] = await loadLogos();
+  const [island, afw] = await Promise.all([
+    islandCity ? loadIslandLogo() : undefined,
+    loadAfwLogo(),
+  ]);
   const { element, context } = canvas(SIZE, SIZE, true);
   try {
     // Match the reference pipeline's source-pixel rounding and square geometry.
@@ -246,7 +260,7 @@ export async function renderThumbnail(photo: Photo, crop: Crop): Promise<Blob> {
       throw new Error('The photo is no longer available. Select it again before exporting.');
     }
     addGrain(context);
-    context.drawImage(island, 49, 49);
+    if (island) context.drawImage(island, 49, 49);
     context.drawImage(afw, SIZE - afw.width, SIZE - afw.height);
     return await toBlob(element);
   } finally {

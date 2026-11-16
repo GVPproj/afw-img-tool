@@ -175,44 +175,50 @@
 }
 
 .app-shell {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 70rem;
-  margin-inline: auto;
-  padding: var(--spacing-page-start) var(--spacing-gutter) var(--spacing-panel);
+  min-height: 100svh;
+  padding: var(--spacing-panel);
 }
 
 .page-title {
   margin-bottom: var(--spacing-panel);
   font-family: var(--font-heading-caps);
   font-size: clamp(1.75rem, 4vw, 2.5rem);
-  text-align: center;
 }
 
-.workflow-grid {
+.workspace {
   display: grid;
+  flex: 1;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-panel);
-  align-items: stretch;
-}
-
-.workspace-card {
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--color-ink) 35%, var(--color-surface));
   border-top: 3px solid var(--color-accent);
 }
 
-.workspace-card .card-body {
+.preview-panel, .settings-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   gap: var(--spacing-card);
   padding: var(--spacing-panel);
-  font-size: var(--text-body);
 }
 
-.workspace-card .card-body p {
-  flex-grow: 0;
+.preview-area {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 12rem;
 }
 
-.workspace-card h2 {
+.settings-panel {
+  border-top: 1px solid var(--color-base-300);
+}
+
+.workspace h2 {
   font-family: var(--font-heading-caps);
   font-size: clamp(1.5rem, 2.5vw, 1.875rem);
   text-transform: uppercase;
@@ -261,7 +267,7 @@
   justify-content: center;
   gap: 0.75rem;
   width: 100%;
-  aspect-ratio: 1;
+  min-height: min(55svh, 36rem);
   padding: var(--spacing-panel);
   border: 1px dashed var(--color-muted);
   color: var(--color-muted);
@@ -295,11 +301,18 @@
 
 .crop-selection {
   position: absolute;
-  border: 2px solid var(--color-highlight);
   box-shadow: 0 0 0 100vmax rgb(0 0 0 / 65%), inset 0 0 0 1px var(--color-surface);
   cursor: move;
   touch-action: none;
   user-select: none;
+}
+
+.crop-selection::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--color-highlight);
+  pointer-events: none;
 }
 
 .crop-grid {
@@ -347,7 +360,7 @@
 
 .crop-controls {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .control-label {
@@ -366,6 +379,26 @@
   grid-column: 1 / -1;
   width: 100%;
   --range-bg: var(--color-muted);
+}
+
+.settings-legend {
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.artwork-controls {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 44px;
+  cursor: pointer;
 }
 
 .panel-actions {
@@ -389,12 +422,18 @@
   font-size: 0.875rem;
 }
 
-.result-image {
-  display: block;
+.panel-actions .btn {
   width: 100%;
-  height: auto;
-  aspect-ratio: 1;
-  object-fit: contain;
+}
+
+.result-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .file-meta, .status-line {
@@ -412,7 +451,6 @@
   align-items: center;
   gap: 0.5rem;
   min-height: 1.5em;
-  margin-block: var(--spacing-card);
 }
 
 .alert {
@@ -463,8 +501,19 @@ input:disabled, .file-input:disabled::file-selector-button {
 }
 
 @media (width > 900px) {
-  .workflow-grid {
+  .workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-panel {
+    border-top: 0;
+    border-left: 1px solid var(--color-base-300);
+  }
+}
+
+@media (width <= 900px) {
+  .app-shell {
+    padding: 0.75rem;
   }
 }
 
@@ -484,7 +533,7 @@ input:disabled, .file-input:disabled::file-selector-button {
     -webkit-text-fill-color: GrayText;
   }
 
-  .crop-selection, .crop-handle::after {
+  .crop-selection::after, .crop-handle::after {
     border-color: Highlight;
   }
 }

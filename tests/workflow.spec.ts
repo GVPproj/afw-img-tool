@@ -21,24 +21,64 @@ async function photoFile(page: Page, name = 'sunset.png', orientation?: number) 
   return { name, mimeType: '', buffer }
 }
 
-test('private photo → keyboard crop → 1080 PNG; reset and replacement', async ({ page }) => {
+async function liveResult(page: Page, previousUrl?: string) {
+  const download = page.getByRole('link', { name: 'Download PNG' })
+  await expect(download).toBeVisible()
+  if (previousUrl) await expect(download).not.toHaveAttribute('href', previousUrl)
+  const url = (await download.getAttribute('href'))!
+  await expect(page.locator('.crop-selection .result-image')).toHaveAttribute('src', url)
+  return url
+}
+
+async function downloadedPixels(page: Page) {
+  const pending = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'Download PNG' }).click()
+  const stream = await (await pending).createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  const png = Buffer.concat(chunks)
+  expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+  const matches = await page.locator('.result-image').evaluate(async (preview: HTMLImageElement, url) => {
+    const downloaded = new Image()
+    downloaded.src = url
+    await Promise.all([preview.decode(), downloaded.decode()])
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1080
+    const ctx = canvas.getContext('2d')!
+    const pixels = (image: HTMLImageElement) => {
+      ctx.clearRect(0, 0, 1080, 1080)
+      ctx.drawImage(image, 0, 0)
+      return ctx.getImageData(0, 0, 1080, 1080).data
+    }
+    const actual = pixels(downloaded)
+    const shown = pixels(preview)
+    return downloaded.naturalWidth === 1080 && downloaded.naturalHeight === 1080 &&
+      actual.every((value, index) => value === shown[index])
+  }, dataUrl)
+  expect(matches, 'downloaded PNG pixels must match the live preview').toBe(true)
+  return dataUrl
+}
+
+test('private photo → live keyboard crop → 1080 PNG; reset and replacement', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
-  await expect(page.getByRole('button', { name: 'Generate thumbnail' })).toBeDisabled()
+  await expect(page.getByRole('link', { name: 'Download PNG' })).toHaveCount(0)
+  await expect(page.getByRole('slider', { name: 'Crop size' })).toBeDisabled()
   const requests: string[] = []
   page.on('request', request => { if (/^https?:/.test(request.url())) requests.push(`${request.method()} ${request.url()}`) })
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
   await expect(page.getByRole('status')).toContainText('Photo ready')
   await expect(page.getByText('sunset.png · 900 × 600')).toBeVisible()
+  const originalUrl = await liveResult(page)
   const size = page.getByRole('slider', { name: 'Crop size' })
   await size.focus()
   await size.press('Home')
   await size.press('ArrowRight')
   await expect(size).toHaveValue('0.1')
-  await page.getByRole('button', { name: 'Generate thumbnail' }).click()
+  const croppedUrl = await liveResult(page, originalUrl)
   const download = page.getByRole('link', { name: 'Download PNG' })
-  await expect(download).toBeVisible()
   await expect(download).toHaveAttribute('download', 'sunset_thumb.png')
   const details = await page.locator('.result-image').evaluate(async (image: HTMLImageElement) => {
     await image.decode()
@@ -62,10 +102,12 @@ test('private photo → keyboard crop → 1080 PNG; reset and replacement', asyn
   await download.click()
   expect((await downloadEvent).suggestedFilename()).toBe('sunset_thumb.png')
   await page.getByRole('button', { name: 'Reset crop' }).click()
-  await expect(download).toHaveCount(0)
   await expect(size).toHaveValue('100')
+  const resetUrl = await liveResult(page, croppedUrl)
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page, 'replacement.png'))
   await expect(page.getByText('replacement.png · 900 × 600')).toBeVisible()
+  await liveResult(page, resetUrl)
+  await expect(download).toHaveAttribute('download', 'replacement_thumb.png')
   expect(requests.filter(request => !request.startsWith('GET http://127.0.0.1:4173/'))).toEqual([])
   expect(errors).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -75,10 +117,12 @@ test('invalid files fail usefully and a valid file recovers', async ({ page }) =
   await page.goto('/')
   await page.getByLabel('Photo file').setInputFiles({ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not a photo') })
   await expect(page.getByRole('alert')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Generate thumbnail' })).toBeDisabled()
+  await expect(page.getByRole('link', { name: 'Download PNG' })).toHaveCount(0)
+  await expect(page.locator('.result-image')).toHaveCount(0)
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
   await expect(page.getByRole('status')).toContainText('Photo ready')
   await expect(page.getByRole('alert')).toHaveCount(0)
+  await liveResult(page)
 })
 
 test('pointer crop remains square and in bounds after resizing viewport', async ({ page, isMobile }) => {
@@ -86,6 +130,7 @@ test('pointer crop remains square and in bounds after resizing viewport', async 
   await page.goto('/')
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
   await expect(page.getByRole('status')).toContainText('Photo ready')
+  const originalUrl = await liveResult(page)
   const selection = page.locator('.crop-selection')
   const before = (await selection.boundingBox())!
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2)
@@ -93,6 +138,7 @@ test('pointer crop remains square and in bounds after resizing viewport', async 
   await page.mouse.move(before.x + before.width / 2 + 35, before.y + before.height / 2)
   await page.mouse.up()
   expect((await selection.boundingBox())!.x).toBeGreaterThan(before.x)
+  const movedUrl = await liveResult(page, originalUrl)
   await page.locator('.crop-handle').scrollIntoViewIfNeeded()
   const handle = (await page.locator('.crop-handle').boundingBox())!
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
@@ -100,6 +146,7 @@ test('pointer crop remains square and in bounds after resizing viewport', async 
   await page.mouse.move(handle.x - 60, handle.y - 60)
   await page.mouse.up()
   expect((await selection.boundingBox())!.width).toBeLessThan(before.width)
+  await liveResult(page, movedUrl)
   await page.setViewportSize({ width: 600, height: 900 })
   const box = (await selection.boundingBox())!
   const bounds = (await page.locator('.crop-stage').boundingBox())!
@@ -117,8 +164,7 @@ for (const orientation of [2, 6]) {
     await expect(page.getByText(`oriented.jpg · ${dimensions}`)).toBeVisible()
     const box = (await page.locator('.crop-selection').boundingBox())!
     expect(Math.abs(box.width - box.height)).toBeLessThan(2)
-    await page.getByRole('button', { name: 'Generate thumbnail' }).click()
-    await expect(page.getByRole('link', { name: 'Download PNG' })).toBeVisible()
+    await liveResult(page)
     const samples = await page.evaluate(async () => {
       const sample = async (selector: string) => {
         const image = document.querySelector<HTMLImageElement>(selector)!
@@ -138,3 +184,95 @@ for (const orientation of [2, 6]) {
     }
   })
 }
+
+test('Island City toggles actual preview/download pixels; AFW and grain stay stable', async ({ page }) => {
+  await page.goto('/')
+  const overlay = page.getByRole('checkbox', { name: 'Island City overlay' })
+  await expect(overlay).toBeChecked()
+  await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
+  const originalUrl = await liveResult(page)
+  const withIsland = await downloadedPixels(page)
+
+  await overlay.uncheck()
+  const withoutUrl = await liveResult(page, originalUrl)
+  const withoutIsland = await downloadedPixels(page)
+  await expect(overlay).not.toBeChecked()
+
+  await overlay.check()
+  await liveResult(page, withoutUrl)
+  const restored = await downloadedPixels(page)
+  const comparison = await page.evaluate(async (urls) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1080
+    const ctx = canvas.getContext('2d')!
+    const images = await Promise.all(urls.map(async url => {
+      const image = new Image()
+      image.src = url
+      await image.decode()
+      ctx.drawImage(image, 0, 0)
+      return ctx.getImageData(0, 0, 1080, 1080).data
+    }))
+    const yellow = images.map(() => ({ topLeft: 0, lowerRight: 0 }))
+    let changedTopLeft = 0
+    let changedElsewhere = 0
+    let restoredDifferences = 0
+    for (let y = 0; y < 1080; y++) {
+      for (let x = 0; x < 1080; x++) {
+        const offset = (y * 1080 + x) * 4
+        const topLeft = x < 540 && y < 540
+        images.forEach((pixels, index) => {
+          if (pixels[offset] === 255 && pixels[offset + 1] === 234 && pixels[offset + 2] === 72) {
+            if (topLeft) yellow[index].topLeft++
+            if (x >= 540 && y >= 540) yellow[index].lowerRight++
+          }
+        })
+        const changed = [0, 1, 2, 3].some(channel => images[0][offset + channel] !== images[1][offset + channel])
+        if (changed && topLeft) changedTopLeft++
+        if (changed && !topLeft) changedElsewhere++
+        if ([0, 1, 2, 3].some(channel => images[0][offset + channel] !== images[2][offset + channel])) restoredDifferences++
+      }
+    }
+    return { yellow, changedTopLeft, changedElsewhere, restoredDifferences }
+  }, [withIsland, withoutIsland, restored])
+  expect(comparison.yellow[0].topLeft).toBeGreaterThan(1000)
+  expect(comparison.yellow[1].topLeft).toBe(0)
+  expect(comparison.yellow[1].lowerRight).toBeGreaterThan(1000)
+  expect(comparison.yellow[1].lowerRight).toBe(comparison.yellow[0].lowerRight)
+  expect(comparison.changedTopLeft).toBeGreaterThan(1000)
+  expect(comparison.changedElsewhere, 'AFW and grain must not change when toggling Island City').toBe(0)
+  expect(comparison.restoredDifferences, 'restoring the overlay must reproduce every pixel').toBe(0)
+})
+
+test('one workspace puts preview left of settings above 900px and stacks without mobile overflow', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
+  await liveResult(page)
+  await expect(page.getByRole('region', { name: 'Thumbnail editor' })).toHaveCount(1)
+  await expect(page.locator('.preview-panel')).toHaveCount(1)
+  await expect(page.locator('.settings-panel')).toHaveCount(1)
+  await expect(page.locator('.result-image')).toHaveCount(1)
+  await expect(page.locator('.crop-stage > .crop-image + .crop-selection > .result-image')).toHaveCount(1)
+
+  for (const width of [1280, 901, 900, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const preview = (await page.locator('.preview-panel').boundingBox())!
+    const settings = (await page.locator('.settings-panel').boundingBox())!
+    const upload = (await page.locator('.preview-panel').getByLabel('Photo file').boundingBox())!
+    const stage = (await page.locator('.crop-stage').boundingBox())!
+    expect(upload.y + upload.height).toBeLessThanOrEqual(stage.y)
+    if (width > 900) {
+      expect(preview.x + preview.width).toBeLessThanOrEqual(settings.x + 1)
+      expect(Math.abs(preview.y - settings.y)).toBeLessThan(1)
+      expect(Math.abs(preview.width - settings.width)).toBeLessThan(1)
+    } else {
+      expect(preview.y + preview.height).toBeLessThanOrEqual(settings.y + 1)
+      expect(Math.abs(preview.x - settings.x)).toBeLessThan(1)
+    }
+    const selection = (await page.locator('.crop-selection').boundingBox())!
+    const result = (await page.locator('.result-image').boundingBox())!
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(Math.abs(selection[key] - result[key])).toBeLessThan(1)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no overflow at ${width}px`).toBe(true)
+  }
+})

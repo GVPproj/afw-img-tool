@@ -25,7 +25,7 @@ The proxy persists independently of Vite. Stop `pnpm dev` to stop serving the ap
 
 1. Choose a JPEG or PNG. File signatures, not extensions/MIME alone, determine support.
 2. Drag the square to move it, drag its bottom-right corner to resize, or use the labelled keyboard-accessible sliders. Reset restores the largest centered square.
-3. Generate, then download `<source-stem>_thumb.png`. Changing the crop clears the old result.
+3. The processed preview updates automatically inside the crop square. Toggle the Island City overlay in Settings, then download `<source-stem>_thumb.png`. Crop guides are editor-only; downloads include only the image, grain, and enabled artwork.
 
 HEIC, batch processing, adjustable templates, and offline caching are intentionally out of scope for this first version.
 
@@ -34,9 +34,9 @@ HEIC, batch processing, adjustable templates, and offline caching are intentiona
 - 1080 × 1080 opaque PNG; transparent input is flattened onto black.
 - Browser-normalized EXIF orientation, full-resolution source retained for export.
 - Monochrome Gaussian grain (sigma 25), soft-light blended before the logos.
-- Original yellow (`#FFEA48`) artwork: Island City 324px wide with a 49px top/left margin; AFW 454px wide, flush bottom-right. Transparent SVG padding is trimmed before sizing.
+- Original yellow (`#FFEA48`) artwork: optional Island City overlay (on by default), 324px wide with a 49px top/left margin; AFW always included, 454px wide, flush bottom-right. Transparent SVG padding is trimmed before sizing.
 
-Browser resampling and soft-light blending aim for visual equivalence, not pixel identity with Pillow. Grain is random on each generation. Exact reference-image comparison, wide-gamut/HDR handling, very large photo memory use, and real iPhone/Safari validation remain follow-up work. Processing currently runs on the main thread; the UI paints a loading state before rendering.
+Browser resampling and soft-light blending aim for visual equivalence, not pixel identity with Pillow. A random grain texture is reused throughout the session to keep live updates visually stable. Exact reference-image comparison, wide-gamut/HDR handling, very large photo memory use, and real iPhone/Safari validation remain follow-up work. Processing runs on the main thread; rapid edits are coalesced, and stale renders cannot replace the current preview or download.
 
 ## Checks
 

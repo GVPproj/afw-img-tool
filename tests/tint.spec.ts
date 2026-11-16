@@ -121,6 +121,50 @@ async function inspectTint(page: Page, png: Buffer) {
   }, png.toString('base64'))
 }
 
+for (const effect of ['Normal', 'Diffusion Dither', 'Duotone']) {
+  test(`${effect}: corner gradient uses neutral shading only in Normal mode`, async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('radio', { name: effect, exact: true }).check()
+    await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page, effect === 'Normal' ? '#808080' : '#000'))
+    let url = await ready(page)
+    const samples = async () => {
+      const png = await downloadPng(page)
+      return page.evaluate(async base64 => {
+        const image = new Image()
+        image.src = `data:image/png;base64,${base64}`
+        await image.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')!
+        context.drawImage(image, 0, 0)
+        const pixel = (y: number) => Array.from(context.getImageData(8, y, 1, 1).data)
+        return { top: pixel(8), middle: pixel(Math.floor(canvas.height / 2)), bottom: pixel(canvas.height - 8) }
+      }, png.toString('base64'))
+    }
+    const original = await samples()
+    const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+    await gradient.check()
+    url = await ready(page, url)
+    const shaded = await samples()
+    expect(shaded.middle).toEqual(original.middle)
+    for (const corner of ['top', 'bottom'] as const) {
+      if (effect === 'Normal') {
+        const [r, g, b, alpha] = shaded[corner]
+        expect(r).toBe(g)
+        expect(g).toBe(b)
+        expect(alpha).toBe(255)
+        expect(r).toBeLessThan(original[corner][0])
+      } else {
+        expect(shaded[corner]).toEqual([0, 26, 114, 255])
+      }
+    }
+    await gradient.uncheck()
+    await ready(page, url)
+    expect(await samples()).toEqual(original)
+  })
+}
+
 const colorCases = [
   { color: 'Copper', highlight: [224, 108, 58], format: 'Square', height: 1728 },
   { color: 'Berry', highlight: [179, 68, 121], format: '4:5', height: 2160 },

@@ -298,10 +298,9 @@ function applyDiffusionDither(context: CanvasRenderingContext2D, ink: string) {
   }
 }
 
-/** Feather navy beneath corner artwork, leaving the middle 40% of the photo clear. */
-function shadeCorners(context: CanvasRenderingContext2D, shadeTop: boolean) {
+/** Feather shade beneath corner artwork, leaving the middle 40% of the photo clear. */
+function shadeCorners(context: CanvasRenderingContext2D, shadeTop: boolean, shade: string) {
   const { width, height } = context.canvas;
-  const navy = getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim();
   const corners = [[0, height], [width, height]];
   if (shadeTop) corners.push([0, 0], [width, 0]);
   for (const [x, y] of corners) {
@@ -310,8 +309,8 @@ function shadeCorners(context: CanvasRenderingContext2D, shadeTop: boolean) {
       context.translate(x, y);
       context.scale(width * 0.75, height * 0.3);
       const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1);
-      gradient.addColorStop(0, navy);
-      gradient.addColorStop(0.25, navy);
+      gradient.addColorStop(0, shade);
+      gradient.addColorStop(0.25, shade);
       gradient.addColorStop(1, 'transparent');
       context.fillStyle = gradient;
       context.globalAlpha = 0.5;
@@ -479,7 +478,12 @@ export async function renderThumbnail(
       addGrain(context);
       if (duotone) applyDuotone(context, ink);
     }
-    if (cornerGradient) shadeCorners(context, !footer);
+    if (cornerGradient) {
+      const shade = duotone || dither
+        ? getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim()
+        : '#000';
+      shadeCorners(context, !footer, shade);
+    }
     // Only artwork uses design coordinates. Photo pixels, dither and shading
     // above are already at native output resolution and are never enlarged.
     context.scale(OUTPUT_SCALE, OUTPUT_SCALE);

@@ -32,7 +32,7 @@ HEIC, batch processing, adjustable templates, and offline caching are not suppor
 - Soft-light grain (except with Diffusion dither), station-specific artwork, and wrapped host names. Grain stays stable during the session.
 - Diffusion dither converts the resized photo from sRGB to linear-light luminance, then applies a print-gray gamma of 1.75 before Floyd–Steinberg error diffusion selects navy or the theme color per pixel. This tone curve approximates the supplied Photoshop reference; it does not emulate Photoshop's ICC gray profiles. It runs at final export size, without extra grain; text and logos are added afterwards. Off by default. The PNG remains full-color, not a 1-bit bitmap file. Corner gradient can add intermediate colors after dithering.
 - Duotone maps the photo to navy and the selected theme color with a subtle print texture. Normal retains the photo’s source colors.
-- Corner gradient shades beneath the artwork, affecting only the footer for Sunday and CC. Text and logos retain the selected theme color; contrast depends on the photo and is **not guaranteed to meet WCAG**.
+- Corner gradient uses neutral black shading in Normal mode and navy with Diffusion Dither or Duotone. It shades beneath the artwork, affecting only the footer for Sunday and CC. Text and logos retain the selected theme color; contrast depends on the photo and is **not guaranteed to meet WCAG**.
 
 Processing runs on the main thread. Rapid edits are coalesced, and stale renders cannot replace the current preview or download. Very large images, wide-gamut/HDR handling, and real iPhone/Safari validation remain limitations or follow-up work.
 

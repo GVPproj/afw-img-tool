@@ -1,5 +1,7 @@
 import { clampCrop, outputRatio, type OutputFormat, type Crop } from './crop';
 
+export type Tint = 'none' | 'copper' | 'berry' | 'lime';
+
 export type Photo = {
   /** Full-resolution, natively EXIF-oriented source. Valid until dispose(). */
   source: CanvasImageSource;
@@ -236,8 +238,51 @@ function addGrain(context: CanvasRenderingContext2D) {
   }
 }
 
-function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string) {
-  context.fillStyle = '#e2ff78';
+/** Map luminance (including grain) from theme navy to the selected theme ink. */
+function applyTint(context: CanvasRenderingContext2D, ink: string) {
+  const { element, context: palette } = canvas(256, 1, true);
+  try {
+    // Canvas resolves CSS colors and provides a small lookup table for the photo.
+    const gradient = palette.createLinearGradient(0.5, 0, 255.5, 0);
+    gradient.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim());
+    gradient.addColorStop(1, ink);
+    palette.fillStyle = gradient;
+    palette.fillRect(0, 0, 256, 1);
+    const colors = palette.getImageData(0, 0, 256, 1).data;
+    const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
+    const { data } = image;
+    for (let i = 0; i < data.length; i += 4) {
+      const tone = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) * 4;
+      data[i] = colors[tone];
+      data[i + 1] = colors[tone + 1];
+      data[i + 2] = colors[tone + 2];
+    }
+    context.putImageData(image, 0, 0);
+  } finally {
+    releaseCanvas(element);
+  }
+}
+
+function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x: number, y: number, ink?: string) {
+  if (!ink) {
+    context.drawImage(logo, x, y);
+    return;
+  }
+  // Recolor an alpha mask, never the cached original or the photo beneath it.
+  const { element, context: mask } = canvas(logo.width, logo.height);
+  try {
+    mask.drawImage(logo, 0, 0);
+    mask.globalCompositeOperation = 'source-in';
+    mask.fillStyle = ink;
+    mask.fillRect(0, 0, element.width, element.height);
+    context.drawImage(element, x, y);
+  } finally {
+    releaseCanvas(element);
+  }
+}
+
+function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string, ink = '#e2ff78') {
+  context.fillStyle = ink;
   context.font = '44px Iosevka';
   context.textBaseline = 'top';
   const lineHeight = 50;
@@ -289,12 +334,13 @@ function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: 
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { islandCity = true, format = 'square', radio = 'island-city', host = '', date = '' }: {
+  { islandCity = true, format = 'square', radio = 'island-city', host = '', date = '', tint = 'none' }: {
     islandCity?: boolean;
     format?: OutputFormat;
     radio?: 'island-city' | 'chir-fm';
     host?: string;
     date?: string;
+    tint?: Tint;
   } = {},
 ): Promise<Blob> {
   const ratio = outputRatio(format);
@@ -320,10 +366,14 @@ export async function renderThumbnail(
       throw new Error('The photo is no longer available. Select it again before exporting.');
     }
     addGrain(context);
+    const ink = radio === 'chir-fm' && tint !== 'none'
+      ? getComputedStyle(document.documentElement).getPropertyValue(`--color-brand-${tint}`).trim()
+      : undefined;
+    if (ink) applyTint(context, ink);
     if (island) context.drawImage(island, 49, 49);
-    if (radio === 'chir-fm') drawChirDetails(context, host, date);
-    if (chir) context.drawImage(chir, 24, height - chir.height - 20);
-    context.drawImage(afw, SIZE - afw.width, height - afw.height);
+    if (radio === 'chir-fm') drawChirDetails(context, host, date, ink);
+    if (chir) drawLogo(context, chir, 24, height - chir.height - 20, ink);
+    drawLogo(context, afw, SIZE - afw.width, height - afw.height, ink);
     return await toBlob(element);
   } finally {
     releaseCanvas(element);

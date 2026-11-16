@@ -25,7 +25,7 @@ The proxy persists independently of Vite. Stop `pnpm dev` to stop serving the ap
 
 1. Choose a JPEG or PNG. File signatures, not extensions/MIME alone, determine support.
 2. Choose square (1:1) or Instagram portrait (4:5) in Settings. Drag the crop to move it, drag its bottom-right corner to resize, or use the labelled keyboard-accessible crop controls. Reset or changing format restores the largest centered crop.
-3. Choose Island City or CHIR FM (the default) using the station controls. Island City has an optional logo overlay; CHIR FM shows daisyUI date and host-name inputs. Its thumbnail includes “A Friendly Wave Radio”, wrapped host names, and a long-form date at top-left, with the fixed Tuesday schedule, frequencies, and website at top-right. Empty host/date fields are omitted. Switching stations preserves those values. The original CHIR FM logo asset is not bundled.
+3. Choose Island City or CHIR FM (the default) using the station controls. Island City has an optional logo overlay; CHIR FM shows daisyUI date and host-name inputs. Its thumbnail includes “A Friendly Wave Radio”, wrapped host names, and a long-form date at top-left, with the fixed Tuesday schedule, frequencies, and website at top-right. Empty host/date fields are omitted. Switching stations preserves those values. CHIR FM also offers a Tint radio group: None (original colors), Copper, Berry, or Lime. Tints use theme navy shadows and the selected theme color for highlights, show text, and both logos. Switching stations preserves the tint choice, but never applies it to Island City.
 4. The processed preview updates automatically inside the selected crop, then download `<source-stem>_thumb.png`. Crop guides are editor-only; downloads include only the image, grain, and enabled artwork.
 
 HEIC, batch processing, adjustable templates, and offline caching are intentionally out of scope for this first version.
@@ -36,7 +36,8 @@ HEIC, batch processing, adjustable templates, and offline caching are intentiona
 - Browser-normalized EXIF orientation, full-resolution source retained for export.
 - Monochrome Gaussian grain (sigma 25), soft-light blended before the logos.
 - Original yellow (`#FFEA48`) artwork: optional Island City overlay (enabled when Island City is selected), 324px wide with a 49px top/left margin; AFW always included, 454px wide, flush bottom-right. Transparent SVG padding is trimmed before sizing.
-- CHIR FM replaces the Island City overlay with lime (`#e2ff78`) Iosevka show details. Fonts are loaded before export; calendar dates are formatted without UTC day shifts. Both stations retain the source photo’s colors.
+- CHIR FM replaces the Island City overlay with Iosevka show details and an inset bottom-left CHIR logo. With Tint set to None, details and CHIR artwork stay lime (`#e2ff78`), AFW stays yellow, and the photo retains its source colors.
+- CHIR tints map photo luminance, after grain, from theme navy (`#001a72`) to Copper (`#e06c3a`), Berry (`#b34479`), or Lime (`#e2ff78`). Text and both logos use the selected highlight color. The colors come from the existing CSS theme tokens; the source photo and cached logos remain untouched. Fonts are loaded before export; calendar dates are formatted without UTC day shifts.
 
 Browser resampling and soft-light blending aim for visual equivalence, not pixel identity with Pillow. A random grain texture is reused throughout the session to keep live updates visually stable. Exact reference-image comparison, wide-gamut/HDR handling, very large photo memory use, and real iPhone/Safari validation remain follow-up work. Processing runs on the main thread; rapid edits are coalesced, and stale renders cannot replace the current preview or download.
 
@@ -51,7 +52,7 @@ pnpm test:e2e
 pnpm test:e2e --project chromium --project firefox --project mobile
 ```
 
-Unit tests cover crop bounds and resizing. Browser tests run against the production build and cover selection, pointer/keyboard controls, PNG dimensions/opacity/artwork, downloads, EXIF rotation/mirroring, failures/recovery, stale decodes, and local-only requests. The `mobile` project uses Chromium device emulation; `mobile-safari` uses WebKit emulation, not a real iPhone.
+Unit tests cover crop bounds and resizing. Browser tests run against the production build and cover selection, pointer/keyboard controls, PNG dimensions/opacity/artwork, tint palettes and matching preview/download pixels, tint restoration and station isolation, downloads, EXIF rotation/mirroring, failures/recovery, stale decodes, and local-only requests. The `mobile` project uses Chromium device emulation; `mobile-safari` uses WebKit emulation, not a real iPhone.
 
 To compare with native React, omit the Redact plugin via the environment flag:
 

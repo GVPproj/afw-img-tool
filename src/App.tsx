@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { centeredCrop, clampCrop, outputRatio, type OutputFormat, type Crop } from './lib/crop'
-import { loadPhoto, renderThumbnail, type Photo } from './lib/images'
+import { loadPhoto, renderThumbnail, type Photo, type Tint } from './lib/images'
 import { CropControls } from './CropControls'
 
 type Radio = 'island-city' | 'chir-fm'
-type Result = { url: string; filename: string; photo: Photo; crop: Crop; islandCity: boolean; format: OutputFormat; radio: Radio; host: string; date: string }
+type Result = { url: string; filename: string; photo: Photo; crop: Crop; islandCity: boolean; format: OutputFormat; radio: Radio; host: string; date: string; tint: Tint }
 type Drag = { x: number; y: number; crop: Crop; mode: 'move' | 'resize' }
 
 export function App() {
@@ -12,6 +12,7 @@ export function App() {
   const [crop, setCrop] = useState<Crop>({ left: 0, top: 0, size: 1 })
   const [islandCity, setIslandCity] = useState(true)
   const [radio, setRadio] = useState<Radio>('chir-fm')
+  const [tint, setTint] = useState<Tint>('none')
   const [host, setHost] = useState('')
   const [date, setDate] = useState('')
   const [format, setFormat] = useState<OutputFormat>('square')
@@ -58,12 +59,12 @@ export function App() {
       await preceding
       try {
         if (cancelled || current !== renderRevision.current) return
-        const blob = await renderThumbnail(photo, crop, { islandCity, format, radio, host, date })
+        const blob = await renderThumbnail(photo, crop, { islandCity, format, radio, host, date, tint })
         if (cancelled || current !== renderRevision.current) return
         const url = URL.createObjectURL(blob)
         if (resultUrl.current) URL.revokeObjectURL(resultUrl.current)
         resultUrl.current = url
-        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, islandCity, format, radio, host, date })
+        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, islandCity, format, radio, host, date, tint })
       } catch (cause) {
         if (cancelled || current !== renderRevision.current) return
         setError(cause instanceof Error ? cause.message : 'Could not update the preview. Please try again.')
@@ -72,7 +73,7 @@ export function App() {
       }
     }, 32)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [photo, crop, islandCity, format, radio, host, date, retry])
+  }, [photo, crop, islandCity, format, radio, host, date, tint, retry])
 
   async function selectPhoto(file: File | undefined) {
     if (!file) return
@@ -138,7 +139,7 @@ export function App() {
     }
   }
 
-  const resultReady = result && result.photo === photo && result.crop === crop && result.islandCity === islandCity && result.format === format && result.radio === radio && result.host === host && result.date === date && !error
+  const resultReady = result && result.photo === photo && result.crop === crop && result.islandCity === islandCity && result.format === format && result.radio === radio && result.host === host && result.date === date && result.tint === tint && !error
   const updating = !!photo && !resultReady && !error
   const status = decoding ? 'Opening your photo locally…' : error ? (photo ? 'Preview could not be updated.' : 'Photo could not be opened.') : photo ? (updating ? 'Photo ready. Updating preview…' : 'Photo ready. Your thumbnail is ready to download.') : 'Choose a photo to get started. Everything stays on your device.'
 
@@ -203,6 +204,15 @@ export function App() {
               </label>
             </>}
           </fieldset>
+          {radio === 'chir-fm' && <fieldset className="artwork-controls">
+            <legend className="settings-legend">Tint</legend>
+            <div className="radio-options">
+              {(['none', 'copper', 'berry', 'lime'] as const).map(next => <label className="toggle-label" key={next}>
+                <span>{next[0].toUpperCase() + next.slice(1)}</span>
+                <input className="radio radio-primary" type="radio" name="tint" value={next} checked={tint === next} onChange={() => { renderRevision.current++; setError(''); setTint(next) }} />
+              </label>)}
+            </div>
+          </fieldset>}
           <fieldset className="artwork-controls format-controls" aria-label="Output format">
             {(['square', 'portrait'] as const).map(next => <label className="toggle-label" key={next}>
               <span>{next === 'square' ? 'Square' : '4:5'}</span>

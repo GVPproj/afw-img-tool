@@ -187,6 +187,19 @@ export function App() {
               }}
             ><span>{decoding ? 'Opening your photo…' : 'Drop a photo here, or click to browse.'}</span><span>Crop, preview, and download in one place.</span></button>}
           </div>
+          <fieldset className="artwork-controls format-controls" aria-label="Output format">
+            {(['square', 'portrait'] as const).map(next => <label className="toggle-label" key={next}>
+              <span>{next === 'square' ? 'Square' : '4:5'}</span>
+              <input className="radio" type="radio" name="output-format" value={next} checked={format === next} onChange={() => {
+                renderRevision.current++
+                drag.current = null
+                selectedFormat.current = next
+                setFormat(next)
+                setError('')
+                if (photo) setCrop(centeredCrop(photo, outputRatio(next)))
+              }} />
+            </label>)}
+          </fieldset>
           <CropControls photo={photo} crop={crop} ratio={ratio} onChange={updateCrop} />
           {photo && <p className="file-meta">{photo.name} · {photo.width} × {photo.height}</p>}
         </div>
@@ -235,19 +248,6 @@ export function App() {
               <span id="corner-gradient-help" className='mr-auto'>(Adds Legibility)</span>
               <input className="toggle" type="checkbox" aria-labelledby="corner-gradient-label" aria-describedby="corner-gradient-help" checked={cornerGradient} onChange={event => { renderRevision.current++; setError(''); setCornerGradient(event.target.checked) }} />
             </label>
-          </fieldset>
-          <fieldset className="artwork-controls format-controls" aria-label="Output format">
-            {(['square', 'portrait'] as const).map(next => <label className="toggle-label" key={next}>
-              <span>{next === 'square' ? 'Square' : '4:5'}</span>
-              <input className="radio" type="radio" name="output-format" value={next} checked={format === next} onChange={() => {
-                renderRevision.current++
-                drag.current = null
-                selectedFormat.current = next
-                setFormat(next)
-                setError('')
-                if (photo) setCrop(centeredCrop(photo, outputRatio(next)))
-              }} />
-            </label>)}
           </fieldset>
           <div className="panel-actions">{resultReady && !decoding ? <a className="btn btn-primary" href={result.url} download={result.filename}>Download PNG <span aria-hidden="true">↓</span></a> : <button className="btn btn-primary" disabled aria-busy={decoding || updating}>Download PNG {decoding || updating ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">↓</span>}</button>}</div>
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{status}</div>

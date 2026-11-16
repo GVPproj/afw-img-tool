@@ -24,14 +24,14 @@ tailscale serve --bg --https=12302 http://127.0.0.1:12302
 The proxy persists independently of Vite. Stop `pnpm dev` to stop serving the app; remove this proxy with `tailscale serve --https=12302 off`. On another host, update `server.allowedHosts` in `vite.config.ts` to its exact Tailscale DNS name.
 
 1. Choose a JPEG or PNG. File signatures, not extensions/MIME alone, determine support.
-2. Drag the square to move it, drag its bottom-right corner to resize, or use the labelled keyboard-accessible sliders. Reset restores the largest centered square.
-3. The processed preview updates automatically inside the crop square. Toggle the Island City overlay in Settings, then download `<source-stem>_thumb.png`. Crop guides are editor-only; downloads include only the image, grain, and enabled artwork.
+2. Choose square (1:1) or Instagram portrait (4:5) in Settings. Drag the crop to move it, drag its bottom-right corner to resize, or use the labelled keyboard-accessible crop controls. Reset or changing format restores the largest centered crop.
+3. The processed preview updates automatically inside the selected crop. Toggle the Island City overlay in Settings, then download `<source-stem>_thumb.png`. Crop guides are editor-only; downloads include only the image, grain, and enabled artwork.
 
 HEIC, batch processing, adjustable templates, and offline caching are intentionally out of scope for this first version.
 
 ## Output
 
-- 1080 × 1080 opaque PNG; transparent input is flattened onto black.
+- 1080 × 1080 square or 1080 × 1350 portrait opaque PNG; transparent input is flattened onto black.
 - Browser-normalized EXIF orientation, full-resolution source retained for export.
 - Monochrome Gaussian grain (sigma 25), soft-light blended before the logos.
 - Original yellow (`#FFEA48`) artwork: optional Island City overlay (on by default), 324px wide with a 49px top/left margin; AFW always included, 454px wide, flush bottom-right. Transparent SVG padding is trimmed before sizing.
@@ -61,7 +61,7 @@ NATIVE_REACT=1 pnpm test:e2e --project chromium
 ## Files
 
 - `src/App.tsx`: single-photo workflow, asynchronous selection ownership, crop interaction.
-- `src/lib/crop.ts`: pure normalized square geometry.
+- `src/lib/crop.ts`: pure normalized square and portrait crop geometry.
 - `src/lib/images.ts`: decoding, resource lifecycle, preview generation, grain, logo composition, PNG encoding.
 - `src/styles.css`: self-contained AFW tokens, fonts, daisyUI theme, layout and crop overlay.
 - `src/assets/`: fixed logo assets, with only explicit paint colors pre-tinted yellow.

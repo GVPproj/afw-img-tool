@@ -1,4 +1,4 @@
-import { clampCrop, type Crop } from './crop';
+import { clampCrop, outputRatio, type OutputFormat, type Crop } from './crop';
 
 export type Photo = {
   /** Full-resolution, natively EXIF-oriented source. Valid until dispose(). */
@@ -229,7 +229,7 @@ function addGrain(context: CanvasRenderingContext2D) {
     if (context.globalCompositeOperation !== 'soft-light') {
       throw new Error('This browser does not support soft-light image blending.');
     }
-    context.drawImage(noise, 0, 0);
+    context.drawImage(noise, 0, 0, context.canvas.width, context.canvas.height);
   } finally {
     context.restore();
   }
@@ -239,29 +239,31 @@ function addGrain(context: CanvasRenderingContext2D) {
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { islandCity = true }: { islandCity?: boolean } = {},
+  { islandCity = true, format = 'square' }: { islandCity?: boolean; format?: OutputFormat } = {},
 ): Promise<Blob> {
-  const normalized = clampCrop(crop, photo);
+  const ratio = outputRatio(format);
+  const height = Math.round(SIZE / ratio);
+  const normalized = clampCrop(crop, photo, ratio);
   const [island, afw] = await Promise.all([
     islandCity ? loadIslandLogo() : undefined,
     loadAfwLogo(),
   ]);
-  const { element, context } = canvas(SIZE, SIZE, true);
+  const { element, context } = canvas(SIZE, height, true);
   try {
-    // Match the reference pipeline's source-pixel rounding and square geometry.
-    const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height));
+    const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height * ratio));
+    const cropHeight = Math.min(photo.height, side / ratio);
     const left = Math.max(0, Math.min(Math.round(normalized.left * photo.width), photo.width - side));
-    const top = Math.max(0, Math.min(Math.round(normalized.top * photo.height), photo.height - side));
+    const top = Math.max(0, Math.min(Math.round(normalized.top * photo.height), photo.height - cropHeight));
     context.fillStyle = '#000';
-    context.fillRect(0, 0, SIZE, SIZE);
+    context.fillRect(0, 0, SIZE, height);
     try {
-      context.drawImage(photo.source, left, top, side, side, 0, 0, SIZE, SIZE);
+      context.drawImage(photo.source, left, top, side, cropHeight, 0, 0, SIZE, height);
     } catch {
       throw new Error('The photo is no longer available. Select it again before exporting.');
     }
     addGrain(context);
     if (island) context.drawImage(island, 49, 49);
-    context.drawImage(afw, SIZE - afw.width, SIZE - afw.height);
+    context.drawImage(afw, SIZE - afw.width, height - afw.height);
     return await toBlob(element);
   } finally {
     releaseCanvas(element);

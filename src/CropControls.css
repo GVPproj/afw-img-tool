@@ -1,0 +1,100 @@
+.crop-knob-row {
+  --dial-size: 44px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+.crop-dial-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.crop-dial {
+  position: relative;
+  width: var(--dial-size);
+  height: var(--dial-size);
+  border-radius: 50%;
+  touch-action: none;
+  user-select: none;
+  cursor: ns-resize;
+  background: conic-gradient(from 225deg, var(--color-accent) var(--sweep), var(--color-base-300) 0 270deg, transparent 0);
+}
+
+.crop-dial-face {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  transform: rotate(var(--angle));
+}
+
+.crop-dial-face i {
+  position: absolute;
+  top: 3px;
+  left: calc(50% - 1px);
+  width: 2px;
+  height: 10px;
+  background: var(--color-highlight);
+}
+
+.crop-dial-group output {
+  color: var(--color-highlight);
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-dial[aria-disabled="true"] {
+  cursor: not-allowed;
+  background: var(--color-base-300);
+}
+
+.crop-dial[aria-disabled="true"] .crop-dial-face i {
+  background: var(--color-muted);
+}
+
+.crop-dial-group:has([aria-disabled="true"]) output {
+  color: var(--color-muted);
+}
+
+.crop-reset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-self: center;
+  gap: 4px;
+  margin-top: calc(12px * 1.3 + 4px);
+  min-width: 44px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.crop-reset svg {
+  width: var(--dial-size);
+  height: var(--dial-size);
+}
+
+.crop-reset:disabled {
+  color: var(--color-muted);
+  cursor: not-allowed;
+}
+
+.crop-reset:not(:disabled):hover {
+  color: var(--color-highlight);
+}
+
+@media (width < 360px) {
+  .crop-knob-row { --dial-size: 44px; gap: 4px; }
+}
+
+@media (forced-colors: active) {
+  .crop-dial { background: Canvas; border: 2px solid ButtonText; }
+  .crop-dial-face { background: Canvas; }
+  .crop-dial-face i { background: Highlight; }
+  .crop-dial[aria-disabled="true"] { border-color: GrayText; }
+  .crop-dial[aria-disabled="true"] .crop-dial-face i { background: GrayText; }
+}

@@ -236,7 +236,7 @@
   font-size: 0.875rem;
 }
 
-.fieldset-legend, .control-label, .file-input, .alert {
+.fieldset-legend, .file-input, .alert {
   font-size: 1rem;
 }
 
@@ -267,14 +267,28 @@
   justify-content: center;
   gap: 0.75rem;
   width: 100%;
-  min-height: min(55svh, 36rem);
+  min-height: min(27.5svh, 18rem);
   padding: var(--spacing-panel);
   border: 1px dashed var(--color-muted);
+  background: transparent;
   color: var(--color-muted);
+  font: inherit;
   text-align: center;
+  cursor: pointer;
 }
 
-.empty-preview p {
+.empty-preview:hover, .empty-preview.is-dragging {
+  border-color: var(--color-accent);
+  color: var(--color-ink);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.empty-preview:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+.empty-preview span {
   flex-grow: 0;
   max-width: 30ch;
   font-size: 1rem;
@@ -363,24 +377,6 @@
   gap: 0.5rem;
 }
 
-.control-label {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.5rem 1rem;
-}
-
-.control-label output {
-  color: var(--color-highlight);
-  font-variant-numeric: tabular-nums;
-}
-
-.range {
-  grid-column: 1 / -1;
-  width: 100%;
-  --range-bg: var(--color-muted);
-}
-
 .settings-legend {
   margin-bottom: 1rem;
   font-weight: 700;
@@ -390,6 +386,15 @@
   display: grid;
   gap: 0.75rem;
   margin-block: 0.75rem;
+}
+
+.format-controls {
+  grid-template-columns: repeat(2, max-content);
+  column-gap: 2rem;
+}
+
+.format-controls .panel-description {
+  grid-column: 1 / -1;
 }
 
 .toggle-label {
@@ -467,14 +472,6 @@ input:disabled, .file-input:disabled::file-selector-button {
   opacity: 1;
   cursor: not-allowed;
   -webkit-text-fill-color: var(--color-muted);
-}
-
-.range:disabled {
-  --range-bg: var(--color-muted);
-  --range-thumb: var(--color-muted);
-  --range-fill: 0;
-  color: var(--color-muted);
-  background: transparent;
 }
 
 :focus-visible {

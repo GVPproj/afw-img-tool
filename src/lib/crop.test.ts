@@ -18,6 +18,24 @@ describe('centeredCrop', () => {
   });
 });
 
+describe('portrait crop', () => {
+  const dimensions = { width: 1200, height: 800 };
+  const ratio = 4 / 5;
+
+  it('centers the maximum 4:5 rectangle', () => {
+    expectCrop(centeredCrop(dimensions, ratio), { left: 7 / 30, top: 0, size: 8 / 15 });
+  });
+
+  it('clamps and resizes using the portrait height', () => {
+    const crop = clampCrop({ left: 1, top: 1, size: 0.4 }, dimensions, ratio);
+    expectCrop(crop, { left: 0.6, top: 0.25, size: 0.4 });
+    const resized = resizeCrop(crop, 0.2, dimensions, ratio);
+    expect(resized.left + resized.size / 2).toBeCloseTo(crop.left + crop.size / 2);
+    expect(resized.top + resized.size * dimensions.width / dimensions.height / ratio / 2)
+      .toBeCloseTo(crop.top + crop.size * dimensions.width / dimensions.height / ratio / 2);
+  });
+});
+
 describe('clampCrop', () => {
   it('clamps position using the physical square height, not the width fraction', () => {
     expectCrop(clampCrop({ left: -2, top: 3, size: 0.5 }, { width: 1000, height: 800 }), {

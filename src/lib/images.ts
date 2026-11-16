@@ -1,6 +1,6 @@
 import { clampCrop, outputRatio, type OutputFormat, type Crop } from './crop';
 
-export type Tint = 'none' | 'copper' | 'berry' | 'lime';
+export type Color = 'copper' | 'berry' | 'lime';
 
 export type Photo = {
   /** Full-resolution, natively EXIF-oriented source. Valid until dispose(). */
@@ -238,8 +238,8 @@ function addGrain(context: CanvasRenderingContext2D) {
   }
 }
 
-/** Map luminance (including grain) from theme navy to the selected theme ink. */
-function applyTint(context: CanvasRenderingContext2D, ink: string) {
+/** Mostly continuous duotone with a subtle print texture; artwork stays solid. */
+function applyDuotone(context: CanvasRenderingContext2D, ink: string) {
   const { element, context: palette } = canvas(256, 1, true);
   try {
     // Canvas resolves CSS colors and provides a small lookup table for the photo.
@@ -251,8 +251,20 @@ function applyTint(context: CanvasRenderingContext2D, ink: string) {
     const colors = palette.getImageData(0, 0, 256, 1).data;
     const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
     const { data } = image;
+    const screenStrength = 0.12;
     for (let i = 0; i < data.length; i += 4) {
-      const tone = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) * 4;
+      const luminance = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+      const x = (i / 4) % image.width;
+      const y = Math.floor(i / 4 / image.width);
+      // A fine 3.2px screen rotated 22.5 degrees, fixed in export coordinates.
+      const u = (x * 0.92388 + y * 0.382683) * 2 * Math.PI / 3.2;
+      const v = (y * 0.92388 - x * 0.382683) * 2 * Math.PI / 3.2;
+      const screen = (Math.cos(u) + Math.cos(v) + 2) / 4;
+      const value = luminance ** 1.05;
+      // Weighted white can round just below 1; keep that endpoint unscreened.
+      const coverage = luminance <= 0 ? 0 : luminance >= 1 - Number.EPSILON ? 1
+        : Math.max(0, Math.min(1, (value - screen) / 0.3 + 0.5));
+      const tone = Math.round((value + (coverage - value) * screenStrength) * 255) * 4;
       data[i] = colors[tone];
       data[i + 1] = colors[tone + 1];
       data[i + 2] = colors[tone + 2];
@@ -263,11 +275,29 @@ function applyTint(context: CanvasRenderingContext2D, ink: string) {
   }
 }
 
-function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x: number, y: number, ink?: string) {
-  if (!ink) {
-    context.drawImage(logo, x, y);
-    return;
+/** Feather navy beneath corner artwork, leaving the middle 40% of the photo clear. */
+function shadeCorners(context: CanvasRenderingContext2D) {
+  const { width, height } = context.canvas;
+  const navy = getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim();
+  for (const [x, y] of [[0, 0], [width, 0], [0, height], [width, height]]) {
+    context.save();
+    try {
+      context.translate(x, y);
+      context.scale(width * 0.75, height * 0.3);
+      const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gradient.addColorStop(0, navy);
+      gradient.addColorStop(0.25, navy);
+      gradient.addColorStop(1, 'transparent');
+      context.fillStyle = gradient;
+      context.globalAlpha = 0.5;
+      context.fillRect(-1, -1, 2, 2);
+    } finally {
+      context.restore();
+    }
   }
+}
+
+function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x: number, y: number, ink: string) {
   // Recolor an alpha mask, never the cached original or the photo beneath it.
   const { element, context: mask } = canvas(logo.width, logo.height);
   try {
@@ -281,7 +311,7 @@ function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x:
   }
 }
 
-function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string, ink = '#e2ff78') {
+function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string) {
   context.fillStyle = ink;
   context.font = '44px Iosevka';
   context.textBaseline = 'top';
@@ -320,13 +350,17 @@ function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: 
   } while (fontSize >= 20);
   lines.forEach((line, index) => context.fillText(line, left, 66 + index * lineHeight));
 
+  drawShowDate(context, date, left, 66 + lines.length * lineHeight);
+}
+
+function drawShowDate(context: CanvasRenderingContext2D, date: string, x: number, y: number) {
   // Parse calendar components locally; UTC parsing can shift the displayed day.
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const [year, month, day] = date.split('-').map(Number);
     const showDate = new Date(0);
     showDate.setFullYear(year, month - 1, day);
     context.font = '44px Iosevka';
-    context.fillText(showDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), left, 66 + lines.length * lineHeight);
+    context.fillText(showDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), x, y);
   }
 }
 
@@ -334,24 +368,25 @@ function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: 
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { islandCity = true, format = 'square', radio = 'island-city', host = '', date = '', tint = 'none' }: {
-    islandCity?: boolean;
+  { format = 'square', radio = 'island-city', host = '', date = '', color = 'lime', duotone = false, cornerGradient = true }: {
     format?: OutputFormat;
     radio?: 'island-city' | 'chir-fm';
     host?: string;
     date?: string;
-    tint?: Tint;
+    color?: Color;
+    duotone?: boolean;
+    cornerGradient?: boolean;
   } = {},
 ): Promise<Blob> {
   const ratio = outputRatio(format);
   const height = Math.round(SIZE / ratio);
   const normalized = clampCrop(crop, photo, ratio);
   const [island, afw, chir] = await Promise.all([
-    radio === 'island-city' && islandCity ? loadIslandLogo() : undefined,
+    radio === 'island-city' ? loadIslandLogo() : undefined,
     loadAfwLogo(),
     radio === 'chir-fm' ? loadChirLogo() : undefined,
   ]);
-  if (radio === 'chir-fm') await document.fonts.load('44px Iosevka');
+  if (radio === 'chir-fm' || date) await document.fonts.load('44px Iosevka');
   const { element, context } = canvas(SIZE, height, true);
   try {
     const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height * ratio));
@@ -366,11 +401,17 @@ export async function renderThumbnail(
       throw new Error('The photo is no longer available. Select it again before exporting.');
     }
     addGrain(context);
-    const ink = radio === 'chir-fm' && tint !== 'none'
-      ? getComputedStyle(document.documentElement).getPropertyValue(`--color-brand-${tint}`).trim()
-      : undefined;
-    if (ink) applyTint(context, ink);
-    if (island) context.drawImage(island, 49, 49);
+    const ink = getComputedStyle(document.documentElement).getPropertyValue(`--color-brand-${color}`).trim();
+    if (duotone) {
+      applyDuotone(context, ink);
+      if (cornerGradient) shadeCorners(context);
+    }
+    if (island) {
+      drawLogo(context, island, 49, 49, ink);
+      context.fillStyle = ink;
+      context.textBaseline = 'bottom';
+      drawShowDate(context, date, 24, height - 20);
+    }
     if (radio === 'chir-fm') drawChirDetails(context, host, date, ink);
     if (chir) drawLogo(context, chir, 24, height - chir.height - 20, ink);
     drawLogo(context, afw, SIZE - afw.width, height - afw.height, ink);

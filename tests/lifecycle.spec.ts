@@ -115,10 +115,10 @@ for (const replacePhoto of [false, true]) {
     await expect(download).toHaveCount(0)
     const size = page.getByRole('slider', { name: 'Crop size' })
     const reset = page.getByRole('button', { name: 'Reset crop' })
-    const overlay = page.getByRole('checkbox', { name: 'Island City overlay' })
+    const station = page.getByRole('radio', { name: 'CHIR FM', exact: true })
     await expect(size).toBeEnabled()
     await expect(reset).toBeEnabled()
-    await expect(overlay).toBeEnabled()
+    await expect(station).toBeEnabled()
     await size.press('Home')
     await expect(page.getByRole('slider', { name: 'Horizontal position' })).toBeEnabled()
     await expect(page.getByRole('slider', { name: 'Vertical position' })).toBeEnabled()
@@ -126,7 +126,9 @@ for (const replacePhoto of [false, true]) {
     await expect(size).toHaveAttribute('aria-valuenow', '100')
     await size.press('Home')
     await size.press('ArrowRight')
-    await overlay.uncheck()
+    await station.check()
+    await page.getByRole('radio', { name: 'Copper', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Duotone', exact: true }).check()
     if (replacePhoto) {
       await page.getByLabel('Photo file').setInputFiles({ name: 'latest.png', mimeType: 'image/png', buffer })
       await expect(page.getByText('latest.png · 900 × 600')).toBeVisible()
@@ -146,8 +148,10 @@ for (const replacePhoto of [false, true]) {
     await expect(download).toHaveAttribute('download', `${replacePhoto ? 'latest' : 'first'}_thumb.png`)
     const url = (await download.getAttribute('href'))!
     await expect(page.locator('.crop-selection .result-image')).toHaveAttribute('src', url)
-    await expect(page.locator('.result-image')).toHaveAttribute('alt', 'Processed thumbnail and AFW logo')
-    await expect(overlay).not.toBeChecked()
+    await expect(page.locator('.result-image')).toHaveAttribute('alt', 'Processed thumbnail with CHIR FM show details and AFW logo')
+    await expect(station).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+    await expect(page.getByRole('checkbox', { name: 'Duotone', exact: true })).toBeChecked()
     expect(await page.evaluate(() => (window as any).thumbnailRace.committed)).toEqual([url])
 
     // Updating an already-completed result must also hide its stale download.
@@ -166,3 +170,70 @@ for (const replacePhoto of [false, true]) {
     expect(errors).toEqual([])
   })
 }
+
+test('stale processed previews stay hidden during settings updates and failed renders', async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = { releases: [] as ((fail?: boolean) => void)[] }
+    ;(window as any).previewRace = state
+    const encode = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      const thumbnail = this.width === 1080 && this.height === 1080 && type === 'image/png'
+      encode.call(this, blob => {
+        if (thumbnail) state.releases.push((fail = false) => callback(fail ? null : blob))
+        else callback(blob)
+      }, type, quality)
+    }
+  })
+  await page.goto('/')
+  const buffer = Buffer.from(await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 80
+    return canvas.toDataURL().split(',')[1]
+  }), 'base64')
+  await page.getByLabel('Photo file').setInputFiles({ name: 'preview.png', mimeType: 'image/png', buffer })
+  const preview = page.locator('.result-image')
+  const download = page.getByRole('link', { name: 'Download PNG' })
+  const waitForRender = (count: number) => expect.poll(() => page.evaluate(() => (window as any).previewRace.releases.length)).toBe(count)
+  const release = (index: number, fail = false) => page.evaluate(({ index, fail }) => (window as any).previewRace.releases[index](fail), { index, fail })
+  await waitForRender(1)
+  await release(0)
+  await expect(download).toBeVisible()
+  let url = (await download.getAttribute('href'))!
+  await expect(preview).toHaveAttribute('src', url)
+
+  const changes = [
+    () => page.getByRole('radio', { name: 'Copper', exact: true }).check(),
+    () => page.getByRole('checkbox', { name: 'Duotone', exact: true }).check(),
+    () => page.getByRole('checkbox', { name: 'Corner gradient', exact: true }).uncheck(),
+    () => page.getByRole('radio', { name: 'Island City', exact: true }).check(),
+    () => page.getByRole('radio', { name: 'CHIR FM', exact: true }).check(),
+  ]
+  for (const [index, change] of changes.entries()) {
+    await change()
+    await waitForRender(index + 2)
+    await expect(preview).toHaveCount(0)
+    await expect(download).toHaveCount(0)
+    // The source image remains available for cropping while processing.
+    await expect(page.locator('.crop-image')).toBeVisible()
+    await release(index + 1)
+    await expect(download).toBeVisible()
+    await expect(download).not.toHaveAttribute('href', url)
+    url = (await download.getAttribute('href'))!
+    await expect(preview).toHaveAttribute('src', url)
+  }
+
+  await page.getByRole('radio', { name: 'Berry', exact: true }).check()
+  await waitForRender(7)
+  await release(6, true)
+  await expect(page.getByRole('alert')).toContainText('could not export')
+  await expect(preview).toHaveCount(0)
+  await expect(download).toHaveCount(0)
+  await page.getByRole('button', { name: 'Retry preview' }).click()
+  await waitForRender(8)
+  await expect(preview).toHaveCount(0)
+  await release(7)
+  await expect(download).toBeVisible()
+  await expect(download).not.toHaveAttribute('href', url)
+  await expect(preview).toHaveAttribute('src', (await download.getAttribute('href'))!)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})

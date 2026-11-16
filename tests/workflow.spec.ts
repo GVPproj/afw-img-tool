@@ -88,16 +88,16 @@ test('private photo → live keyboard crop → 1080 PNG; reset and replacement',
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(image, 0, 0)
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-    let yellow = 0
+    let lime = 0
     let opaque = true
     for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i] === 255 && pixels[i + 1] === 234 && pixels[i + 2] === 72) yellow++
+      if (pixels[i] === 226 && pixels[i + 1] === 255 && pixels[i + 2] === 120) lime++
       if (pixels[i + 3] !== 255) opaque = false
     }
-    return { width: image.naturalWidth, height: image.naturalHeight, yellow, opaque }
+    return { width: image.naturalWidth, height: image.naturalHeight, lime, opaque }
   })
   expect(details).toMatchObject({ width: 1080, height: 1080, opaque: true })
-  expect(details.yellow).toBeGreaterThan(1000)
+  expect(details.lime).toBeGreaterThan(1000)
   const downloadEvent = page.waitForEvent('download')
   await download.click()
   expect((await downloadEvent).suggestedFilename()).toBe('sunset_thumb.png')
@@ -263,21 +263,20 @@ for (const orientation of [2, 6]) {
   })
 }
 
-test('Island City toggles actual preview/download pixels; AFW and grain stay stable', async ({ page }) => {
+test('Island City always includes artwork and restores identical pixels after switching stations', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('radio', { name: 'Island City', exact: true }).check()
-  const overlay = page.getByRole('checkbox', { name: 'Island City overlay' })
-  await expect(overlay).toBeChecked()
+  await expect(page.getByRole('checkbox', { name: 'Island City overlay' })).toHaveCount(0)
+  await expect(page.getByText('Artwork', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('AFW logo and film grain are always included.')).toHaveCount(0)
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
   const originalUrl = await liveResult(page)
   const withIsland = await downloadedPixels(page)
 
-  await overlay.uncheck()
+  await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
   const withoutUrl = await liveResult(page, originalUrl)
   const withoutIsland = await downloadedPixels(page)
-  await expect(overlay).not.toBeChecked()
-
-  await overlay.check()
+  await page.getByRole('radio', { name: 'Island City', exact: true }).check()
   await liveResult(page, withoutUrl)
   const restored = await downloadedPixels(page)
   const comparison = await page.evaluate(async (urls) => {
@@ -291,7 +290,7 @@ test('Island City toggles actual preview/download pixels; AFW and grain stay sta
       ctx.drawImage(image, 0, 0)
       return ctx.getImageData(0, 0, 1080, 1080).data
     }))
-    const yellow = images.map(() => ({ topLeft: 0, lowerRight: 0 }))
+    const ink = images.map(() => ({ topLeft: 0, lowerRight: 0 }))
     let changedTopLeft = 0
     let changedElsewhere = 0
     let restoredDifferences = 0
@@ -300,9 +299,9 @@ test('Island City toggles actual preview/download pixels; AFW and grain stay sta
         const offset = (y * 1080 + x) * 4
         const topLeft = x < 540 && y < 540
         images.forEach((pixels, index) => {
-          if (pixels[offset] === 255 && pixels[offset + 1] === 234 && pixels[offset + 2] === 72) {
-            if (topLeft) yellow[index].topLeft++
-            if (x >= 540 && y >= 540) yellow[index].lowerRight++
+          if (pixels[offset] === 226 && pixels[offset + 1] === 255 && pixels[offset + 2] === 120) {
+            if (topLeft) ink[index].topLeft++
+            if (x >= 540 && y >= 540) ink[index].lowerRight++
           }
         })
         const changed = [0, 1, 2, 3].some(channel => images[0][offset + channel] !== images[1][offset + channel])
@@ -311,14 +310,11 @@ test('Island City toggles actual preview/download pixels; AFW and grain stay sta
         if ([0, 1, 2, 3].some(channel => images[0][offset + channel] !== images[2][offset + channel])) restoredDifferences++
       }
     }
-    return { yellow, changedTopLeft, changedElsewhere, restoredDifferences }
+    return { ink, changedTopLeft, changedElsewhere, restoredDifferences }
   }, [withIsland, withoutIsland, restored])
-  expect(comparison.yellow[0].topLeft).toBeGreaterThan(1000)
-  expect(comparison.yellow[1].topLeft).toBe(0)
-  expect(comparison.yellow[1].lowerRight).toBeGreaterThan(1000)
-  expect(comparison.yellow[1].lowerRight).toBe(comparison.yellow[0].lowerRight)
+  expect(comparison.ink[0].topLeft).toBeGreaterThan(1000)
+  expect(comparison.ink[0].lowerRight).toBeGreaterThan(1000)
   expect(comparison.changedTopLeft).toBeGreaterThan(1000)
-  expect(comparison.changedElsewhere, 'AFW and grain must not change when toggling Island City').toBe(0)
   expect(comparison.restoredDifferences, 'restoring the overlay must reproduce every pixel').toBe(0)
 })
 
@@ -369,8 +365,10 @@ test('CHIR FM shows date and host controls and renders show details without Isla
   await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1350)
   await page.getByRole('radio', { name: 'Island City', exact: true }).check()
   url = await liveResult(page, url)
-  await expect(page.getByLabel('Show date')).toHaveCount(0)
-  await expect(page.getByLabel('Island City overlay')).toBeChecked()
+  await expect(page.getByLabel('Show date')).toBeVisible()
+  await expect(page.getByLabel('Show date')).toHaveValue('2026-12-01')
+  await expect(page.getByLabel('Host name')).toHaveCount(0)
+  await expect(page.getByLabel('Island City overlay')).toHaveCount(0)
   await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
   await liveResult(page, url)
   await expect(page.getByLabel('Show date')).toHaveValue('2026-12-01')

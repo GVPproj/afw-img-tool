@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function tonalPhoto(page: Page) {
-  const base64 = await page.evaluate(() => {
+async function tonalPhoto(page: Page, background?: string) {
+  const base64 = await page.evaluate(background => {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1080
     const context = canvas.getContext('2d')!
@@ -10,8 +10,11 @@ async function tonalPhoto(page: Page) {
       context.fillStyle = color
       context.fillRect(index * 360, 0, 360, 1080)
     }
+    // Keep artwork checks separate from highlight-colored photo marks.
+    context.fillStyle = background ?? '#000'
+    context.fillRect(0, background ? 0 : 500, 1080, 1080)
     return canvas.toDataURL().split(',')[1]
-  })
+  }, background)
   return { name: 'tones.png', mimeType: 'image/png', buffer: Buffer.from(base64, 'base64') }
 }
 
@@ -44,8 +47,8 @@ async function downloadPng(page: Page) {
   return png
 }
 
-async function inspectTint(page: Page, png: Buffer, highlight: number[]) {
-  return page.evaluate(async ({ base64, highlight }) => {
+async function inspectTint(page: Page, png: Buffer) {
+  return page.evaluate(async base64 => {
     const image = new Image()
     image.src = `data:image/png;base64,${base64}`
     await image.decode()
@@ -57,88 +60,446 @@ async function inspectTint(page: Page, png: Buffer, highlight: number[]) {
     const pixel = (x: number) => Array.from(context.getImageData(x, 400, 1, 1).data)
     const midtones = context.getImageData(480, 400, 100, 100).data
     const reds = new Set<number>()
-    for (let i = 0; i < midtones.length; i += 4) reds.add(midtones[i])
+    let neutralMidtones = true
+    for (let i = 0; i < midtones.length; i += 4) {
+      reds.add(midtones[i])
+      if (midtones[i] !== midtones[i + 1] || midtones[i] !== midtones[i + 2]) neutralMidtones = false
+    }
+    // Nearby repeating screen marks correlate; random grain alone does not.
+    let sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0, samples = 0
+    for (let y = 0; y < 99; y++) for (let x = 0; x < 97; x++) {
+      const a = midtones[(y * 100 + x) * 4]
+      const b = midtones[((y + 1) * 100 + x + 3) * 4]
+      sumA += a; sumB += b; sumAA += a * a; sumBB += b * b; sumAB += a * b; samples++
+    }
+    const screenCorrelation = (samples * sumAB - sumA * sumB)
+      / Math.sqrt((samples * sumAA - sumA ** 2) * (samples * sumBB - sumB ** 2))
+    // The most common non-background color in the title is solid artwork ink.
+    const title = context.getImageData(0, 0, 350, 50).data
+    const frequencies = new Map<string, number>()
+    for (let i = 0; i < title.length; i += 4) {
+      const rgb = Array.from(title.slice(i, i + 3))
+      // Without duotone the title sits on black, not navy. Neither is ink.
+      if (rgb.every(value => value === 0)
+        || rgb.every((value, index) => value === [0, 26, 114][index])) continue
+      const key = rgb.join(',')
+      frequencies.set(key, (frequencies.get(key) ?? 0) + 1)
+    }
+    const artwork = [...frequencies].sort((a, b) => b[1] - a[1])[0][0].split(',').map(Number)
     const countInk = (x: number, y: number, w: number, h: number) => {
       const { data } = context.getImageData(x, y, w, h)
       let count = 0
       for (let i = 0; i < data.length; i += 4) {
-        if (highlight.every((channel, index) => data[i + index] === channel)) count++
+        if (artwork.every((channel, index) => data[i + index] === channel)) count++
       }
       return count
     }
+    // Compare every pixel in an artwork-free strip, including all three tones.
+    // This catches photo changes that a handful of endpoint samples would miss.
+    const photo = document.createElement('canvas')
+    photo.width = canvas.width
+    photo.height = 180
+    photo.getContext('2d')!.drawImage(image, 0, 300, canvas.width, 180, 0, 0, canvas.width, 180)
     return {
-      width: canvas.width, height: canvas.height,
-      shadow: pixel(100), highlight: pixel(900), midtone: pixel(500), grainLevels: reds.size,
+      width: canvas.width, height: canvas.height, artwork,
+      photoPixels: photo.toDataURL(), neutralMidtones,
+      shadow: pixel(100), highlight: pixel(900), grainLevels: reds.size,
+      midtoneRange: [Math.min(...reds), Math.max(...reds)], screenCorrelation,
       textInk: countInk(0, 0, 350, 200),
       chirInk: countInk(0, canvas.height - 200, 300, 200),
-      // The left edge of AFW sits over the gray stripe in both formats;
-      // unlike the white stripe, that background cannot count as highlight ink.
+      // The black footer cannot be mistaken for artwork ink.
       afwInk: countInk(630, canvas.height - 150, 80, 150),
     }
-  }, { base64: png.toString('base64'), highlight })
+  }, png.toString('base64'))
 }
 
-for (const { tint, highlight, format, height } of [
-  { tint: 'Copper', highlight: [224, 108, 58], format: 'Square', height: 1080 },
-  { tint: 'Berry', highlight: [179, 68, 121], format: '4:5', height: 1350 },
-  { tint: 'Lime', highlight: [226, 255, 120], format: '4:5', height: 1350 },
-]) {
-test(`CHIR ${tint} tint maps photo tones and matches text and both logos in preview/download`, async ({ page }) => {
+const colorCases = [
+  { color: 'Copper', highlight: [224, 108, 58], format: 'Square', height: 1080 },
+  { color: 'Berry', highlight: [179, 68, 121], format: '4:5', height: 1350 },
+  { color: 'Lime', highlight: [226, 255, 120], format: '4:5', height: 1350 },
+]
+
+for (const { color, highlight, format, height } of colorCases) {
+test(`CHIR ${color} duotone maps photo tones and matches text and both logos in preview/download`, async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('group', { name: 'Tint', exact: true }).getByRole('radio', { name: 'None', exact: true })).toBeChecked()
+  const colors = page.getByRole('group', { name: 'Color', exact: true })
+  const duotone = page.getByRole('checkbox', { name: 'Duotone', exact: true })
+  await expect(colors.getByRole('radio', { name: 'Lime', exact: true })).toBeChecked()
+  await expect(duotone).not.toBeChecked()
   await page.getByRole('radio', { name: format, exact: true }).check()
+  await colors.getByRole('radio', { name: color, exact: true }).check()
   await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
-  const original = await ready(page)
-  await page.getByRole('radio', { name: tint, exact: true }).check()
-  await ready(page, original)
-  const pixels = await inspectTint(page, await downloadPng(page), highlight)
+  let url = await ready(page)
+  const original = await downloadPng(page)
+  const untreated = await inspectTint(page, original)
+  expect(untreated.artwork).toEqual(highlight)
+  expect(untreated.shadow).toEqual([0, 0, 0, 255])
+  expect(untreated.highlight).toEqual([255, 255, 255, 255])
+  await duotone.check()
+  url = await ready(page, url)
+  const treated = await downloadPng(page)
+  const pixels = await inspectTint(page, treated)
   expect(pixels).toMatchObject({ width: 1080, height, shadow: [0, 26, 114, 255], highlight: [...highlight, 255] })
-  expect(pixels.midtone[0]).toBeGreaterThan(0)
-  expect(pixels.midtone[0]).toBeLessThan(highlight[0])
+  // Screened midtones have a repeating print structure, not just random grain.
+  expect(pixels.screenCorrelation).toBeGreaterThan(0.15)
+  // Keep the print texture subtle rather than splitting midtones into two inks.
+  expect(pixels.midtoneRange[1] - pixels.midtoneRange[0]).toBeLessThan(highlight[0] * 0.6)
   expect(pixels.grainLevels).toBeGreaterThan(10)
+  expect(pixels.artwork).toEqual(highlight)
   expect(pixels.textInk).toBeGreaterThan(500)
   expect(pixels.chirInk).toBeGreaterThan(5000)
   expect(pixels.afwInk).toBeGreaterThan(1000)
+  expect(pixels.photoPixels).not.toBe(untreated.photoPixels)
+
+  await duotone.uncheck()
+  url = await ready(page, url)
+  await expect(colors.getByRole('radio', { name: color, exact: true })).toBeChecked()
+  expect((await downloadPng(page)).equals(original), 'duotone off restores the photo without resetting artwork color').toBe(true)
+  await duotone.check()
+  await ready(page, url)
+  expect((await downloadPng(page)).equals(treated), 'duotone on restores the exact screened treatment').toBe(true)
 })
 }
 
-test('tint is keyboard selectable, reversible, preserved across stations, and never affects Island City', async ({ page }) => {
+for (const format of ['Square', '4:5']) {
+test(`${format}: all colors recolor text and both logos without changing photo pixels when duotone is off`, async ({ page }) => {
   await page.goto('/')
+  const colors = page.getByRole('group', { name: 'Color', exact: true })
+  const duotone = page.getByRole('checkbox', { name: 'Duotone', exact: true })
+  const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+  await expect(colors.getByRole('radio')).toHaveCount(3)
+  await expect(page.getByRole('radio', { name: 'None', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Tint', exact: true })).toHaveCount(0)
+  await expect(colors.getByRole('radio', { name: 'Lime', exact: true })).toBeChecked()
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await page.getByRole('radio', { name: format, exact: true }).check()
   await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
   let url = await ready(page)
-  const untinted = await downloadPng(page)
+  const original = await downloadPng(page)
+  const baseline = await inspectTint(page, original)
+  expect(baseline.artwork).toEqual([226, 255, 120])
+
+  for (const { color, highlight } of colorCases) {
+    await colors.getByRole('radio', { name: color, exact: true }).check()
+    url = await ready(page, url)
+    await expect(duotone).not.toBeChecked()
+    await expect(gradient).toBeDisabled()
+    await expect(gradient).toBeChecked()
+    const pixels = await inspectTint(page, await downloadPng(page))
+    expect(pixels).toMatchObject({
+      width: 1080, height: format === 'Square' ? 1080 : 1350,
+      shadow: [0, 0, 0, 255], highlight: [255, 255, 255, 255],
+      artwork: highlight, neutralMidtones: true,
+    })
+    expect(pixels.photoPixels === baseline.photoPixels, `${color} must leave the entire photo strip unchanged`).toBe(true)
+    expect(pixels.grainLevels, 'the existing neutral grain is retained').toBeGreaterThan(10)
+    expect(pixels.textInk).toBeGreaterThan(500)
+    expect(pixels.chirInk).toBeGreaterThan(5000)
+    expect(pixels.afwInk).toBeGreaterThan(1000)
+  }
+  expect((await downloadPng(page)).equals(original), 'returning to Lime restores every pixel').toBe(true)
+})
+}
+
+test('color and duotone are independently keyboard selectable', async ({ page }) => {
+  await page.goto('/')
+  const colors = page.getByRole('group', { name: 'Color', exact: true })
+  const duotone = page.getByRole('checkbox', { name: 'Duotone', exact: true })
+  const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
+  let url = await ready(page)
+  const original = await downloadPng(page)
+  const baseline = await inspectTint(page, original)
+  await colors.getByRole('radio', { name: 'Lime', exact: true }).focus()
+  // Native radio navigation wraps and skips no hidden "None" option.
+  await page.keyboard.press('ArrowRight')
+  await expect(colors.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+  url = await ready(page, url)
+  const copper = await downloadPng(page)
+  const pixels = await inspectTint(page, copper)
+  expect(pixels.artwork).toEqual([224, 108, 58])
+  expect(pixels.photoPixels).toBe(baseline.photoPixels)
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeDisabled()
+
+  // Downloading moves focus to the link; resume navigation on the radio.
+  await colors.getByRole('radio', { name: 'Copper', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(colors.getByRole('radio', { name: 'Berry', exact: true })).toBeChecked()
+  await page.keyboard.press('ArrowLeft')
+  await expect(colors.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+  await duotone.focus()
+  await page.keyboard.press('Space')
+  await expect(duotone).toBeChecked()
+  await expect(gradient).toBeEnabled()
+  url = await ready(page, url)
+  const treated = await inspectTint(page, await downloadPng(page))
+  expect(treated.artwork).toEqual([224, 108, 58])
+  expect(treated.shadow).toEqual([0, 26, 114, 255])
+  expect(treated.highlight).toEqual([224, 108, 58, 255])
+  await duotone.focus()
+  await page.keyboard.press('Space')
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await ready(page, url)
+  await expect(colors.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+  expect((await downloadPng(page)).equals(copper), 'Space reverses duotone, not the selected color').toBe(true)
+  await page.setViewportSize({ width: 320, height: 800 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+for (const { color, highlight } of colorCases) {
+for (const duotone of [false, true]) {
+test(`${color} keeps canonical text and logo colors on dark and bright photos with duotone ${duotone ? 'on' : 'off'}`, async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('radio', { name: color, exact: true }).check()
+  await page.getByRole('checkbox', { name: 'Duotone', exact: true }).setChecked(duotone)
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page, '#000000'))
+  let url = await ready(page)
+  const dark = await downloadPng(page)
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page, '#aaaaaa'))
+  url = await ready(page, url)
+  const bright = await downloadPng(page)
+  const inks = await page.evaluate(async ({ dark, bright, highlight }) => {
+    async function pixels(base64: string) {
+      const image = new Image()
+      image.src = `data:image/png;base64,${base64}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 1080
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0)
+      return context.getImageData(0, 0, 1080, 1080).data
+    }
+    const before = await pixels(dark)
+    const after = await pixels(bright)
+    return [[0, 0, 350, 50], [0, 880, 300, 200], [630, 930, 80, 150]].map(([left, top, width, height]) => {
+      for (let y = top; y < top + height; y++) for (let x = left; x < left + width; x++) {
+        const i = (y * 1080 + x) * 4
+        // On black, only fully opaque artwork can have this exact theme color.
+        if (highlight.every((channel, index) => before[i + index] === channel)) {
+          return Array.from(after.slice(i, i + 3))
+        }
+      }
+      return []
+    })
+  }, { dark: dark.toString('base64'), bright: bright.toString('base64'), highlight })
+  expect(inks[0]).toEqual(highlight)
+  expect(inks[1]).toEqual(inks[0])
+  expect(inks[2]).toEqual(inks[0])
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page, '#000000'))
+  await ready(page, url)
+  expect((await downloadPng(page)).equals(dark), 'photo changes must not mutate the cached artwork').toBe(true)
+})
+}
+}
+
+for (const format of ['Square', '4:5']) {
+test(`${format} duotone corners gently darken while the central photo stays untouched`, async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('radio', { name: format, exact: true }).check()
+  await page.getByRole('radio', { name: 'Copper', exact: true }).check()
+  const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await page.getByRole('checkbox', { name: 'Duotone', exact: true }).check()
+  await expect(gradient).toBeEnabled()
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page, '#ffffff'))
+  let url = await ready(page)
+  const png = await downloadPng(page)
+  await gradient.focus()
+  await page.keyboard.press('Space')
+  await expect(gradient).not.toBeChecked()
+  url = await ready(page, url)
+  const unshaded = await downloadPng(page)
+  expect(unshaded.equals(png)).toBe(false)
+  const pixels = await page.evaluate(async ({ shaded, unshaded }) => {
+    const image = new Image()
+    image.src = `data:image/png;base64,${shaded}`
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d')!
+    context.drawImage(image, 0, 0)
+    const { width, height } = canvas
+    const sample = (x: number, y: number) => Array.from(context.getImageData(x, y, 1, 1).data)
+    // Sample background only, outside the text and opaque logo shapes.
+    const points = [[4, 4], [width - 4, 4], [4, height - 4], [width - 4, height - 240]]
+    const corners = points.map(([x, y]) => sample(x, y))
+    const center = context.getImageData(width / 2 - 100, height / 2 - 50, 200, 100).data
+    const centerColors = new Set<string>()
+    for (let i = 0; i < center.length; i += 4) centerColors.add(Array.from(center.slice(i, i + 4)).join(','))
+    const topMiddle = sample(width / 2, 4)
+    const unshadedImage = new Image()
+    unshadedImage.src = `data:image/png;base64,${unshaded}`
+    await unshadedImage.decode()
+    context.drawImage(unshadedImage, 0, 0)
+    const unshadedCorners = points.map(([x, y]) => sample(x, y))
+    const unshadedCenter = context.getImageData(width / 2 - 100, height / 2 - 50, 200, 100).data
+    return { corners, centerColors: [...centerColors], topMiddle, unshadedCorners,
+      centerChanged: center.some((value, index) => value !== unshadedCenter[index]) }
+  }, { shaded: png.toString('base64'), unshaded: unshaded.toString('base64') })
+  expect(pixels.centerColors, 'the central subject must not receive the corner fade').toEqual(['224,108,58,255'])
+  for (const corner of pixels.corners) {
+    expect(corner[0]).toBeLessThan(224 * 0.98)
+    expect(corner[0]).toBeGreaterThanOrEqual(224 * 0.45)
+    expect(corner[3]).toBe(255)
+  }
+  expect(pixels.corners[0][0]).toBeLessThanOrEqual(224 * 0.55)
+  expect(pixels.topMiddle[0]).toBeGreaterThan(pixels.corners[0][0])
+  // Shading must reach behind the text across the top, not just the extreme corners.
+  expect(pixels.topMiddle[0]).toBeLessThan(224 * 0.7)
+  expect(pixels.centerChanged).toBe(false)
+  for (const corner of pixels.unshadedCorners) expect(corner).toEqual([224, 108, 58, 255])
+  await gradient.check()
+  await ready(page, url)
+  expect((await downloadPng(page)).equals(png), 're-enabling restores the exact shaded image').toBe(true)
+})
+}
+
+test('color, duotone, and gradient choices are available and preserved across stations', async ({ page }) => {
+  await page.goto('/')
+  const colors = page.getByRole('group', { name: 'Color', exact: true })
+  const duotone = page.getByRole('checkbox', { name: 'Duotone', exact: true })
+  const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
+  let url = await ready(page)
+  const original = await downloadPng(page)
   await page.getByRole('radio', { name: 'Island City', exact: true }).check()
   url = await ready(page, url)
   const island = await downloadPng(page)
-  await expect(page.getByRole('group', { name: 'Tint', exact: true })).toHaveCount(0)
+  await expect(colors).toBeVisible()
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
   await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
   url = await ready(page, url)
-  await page.getByRole('radio', { name: 'None', exact: true }).focus()
-  await page.keyboard.press('ArrowRight')
-  await expect(page.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
-  url = await ready(page, url)
-  const copper = await downloadPng(page)
-  expect(copper.equals(untinted)).toBe(false)
-  await page.getByRole('radio', { name: 'Island City', exact: true }).check()
-  url = await ready(page, url)
-  expect((await downloadPng(page)).equals(island), 'cached logos and source colors remain untouched').toBe(true)
-  await expect(page.getByRole('group', { name: 'Tint', exact: true })).toHaveCount(0)
-  await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
-  url = await ready(page, url)
-  await expect(page.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
-  expect((await downloadPng(page)).equals(copper)).toBe(true)
-  await page.getByRole('radio', { name: 'None', exact: true }).check()
-  url = await ready(page, url)
-  expect((await downloadPng(page)).equals(untinted), 'None restores every original pixel').toBe(true)
+  await expect(colors.getByRole('radio', { name: 'Lime', exact: true })).toBeChecked()
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
+  expect((await downloadPng(page)).equals(original)).toBe(true)
 
-  // Rapid changes must leave only the final choice available for download.
-  await page.getByRole('radio', { name: 'Copper', exact: true }).check()
-  await page.getByRole('radio', { name: 'Berry', exact: true }).check()
-  await page.getByRole('radio', { name: 'Lime', exact: true }).check()
+  async function roundTrip(expected: Buffer) {
+    await page.getByRole('radio', { name: 'Island City', exact: true }).check()
+    url = await ready(page, url)
+    await expect(colors).toBeVisible()
+    await expect(colors.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+    await expect(duotone).toBeVisible()
+    await expect(gradient).toBeVisible()
+    expect((await downloadPng(page)).equals(island), 'shared color settings also update Island City').toBe(false)
+    await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
+    url = await ready(page, url)
+    await expect(colors.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
+    expect((await downloadPng(page)).equals(expected), 'returning to CHIR restores the exact image').toBe(true)
+  }
+
+  await colors.getByRole('radio', { name: 'Copper', exact: true }).check()
+  url = await ready(page, url)
+  const untreated = await downloadPng(page)
+  await duotone.check()
+  await gradient.uncheck()
+  url = await ready(page, url)
+  const unshaded = await downloadPng(page)
+  await colors.getByRole('radio', { name: 'Berry', exact: true }).check()
+  url = await ready(page, url)
+  await expect(duotone).toBeChecked()
+  await expect(gradient).not.toBeChecked()
+  const berry = await inspectTint(page, await downloadPng(page))
+  expect(berry.artwork).toEqual([179, 68, 121])
+  expect(berry.highlight).toEqual([179, 68, 121, 255])
+  await colors.getByRole('radio', { name: 'Copper', exact: true }).check()
+  url = await ready(page, url)
+  expect((await downloadPng(page)).equals(unshaded), 'color changes preserve duotone and gradient settings').toBe(true)
+  await roundTrip(unshaded)
+  await expect(duotone).toBeChecked()
+  await expect(gradient).toBeEnabled()
+  await expect(gradient).not.toBeChecked()
+
+  await duotone.uncheck()
+  url = await ready(page, url)
+  await expect(gradient).toBeDisabled()
+  await expect(gradient).not.toBeChecked()
+  expect((await downloadPng(page)).equals(untreated), 'unchecked gradient has no effect without duotone').toBe(true)
+  await roundTrip(untreated)
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await expect(gradient).not.toBeChecked()
+
+  await duotone.check()
+  url = await ready(page, url)
+  expect((await downloadPng(page)).equals(unshaded)).toBe(true)
+  await gradient.check()
+  url = await ready(page, url)
+  const shaded = await downloadPng(page)
+  expect(shaded.equals(unshaded)).toBe(false)
+  await roundTrip(shaded)
+  await expect(duotone).toBeChecked()
+  await expect(gradient).toBeEnabled()
+  await expect(gradient).toBeChecked()
+
+  await duotone.uncheck()
+  url = await ready(page, url)
+  await expect(gradient).toBeDisabled()
+  await expect(gradient).toBeChecked()
+  expect((await downloadPng(page)).equals(untreated), 'checked gradient also has no effect without duotone').toBe(true)
+  await colors.getByRole('radio', { name: 'Lime', exact: true }).check()
   await ready(page, url)
-  const lime = await inspectTint(page, await downloadPng(page), [226, 255, 120])
-  expect(lime.highlight).toEqual([226, 255, 120, 255])
-  expect(lime.afwInk).toBeGreaterThan(1000)
-  await page.setViewportSize({ width: 320, height: 800 })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await expect(gradient).toBeChecked()
+  await expect(gradient).toBeDisabled()
+  expect((await downloadPng(page)).equals(original)).toBe(true)
+})
+
+test('rapid color, duotone, and gradient changes publish only the final state', async ({ page }) => {
+  await page.goto('/')
+  const colors = page.getByRole('group', { name: 'Color', exact: true })
+  const duotone = page.getByRole('checkbox', { name: 'Duotone', exact: true })
+  const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
+  await colors.getByRole('radio', { name: 'Berry', exact: true }).check()
+  await duotone.check()
+  await gradient.uncheck()
+  await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
+  let url = await ready(page)
+  const treated = await downloadPng(page)
+  await duotone.uncheck()
+  url = await ready(page, url)
+  const untreated = await downloadPng(page)
+
+  // Do not wait for intermediate renders: colors must not reset either checkbox.
+  await colors.getByRole('radio', { name: 'Copper', exact: true }).check()
+  await duotone.check()
+  await gradient.check()
+  await colors.getByRole('radio', { name: 'Lime', exact: true }).check()
+  await duotone.uncheck()
+  await colors.getByRole('radio', { name: 'Berry', exact: true }).check()
+  await duotone.check()
+  await gradient.uncheck()
+  await gradient.check()
+  await gradient.uncheck()
+  url = await ready(page, url)
+  await expect(colors.getByRole('radio', { name: 'Berry', exact: true })).toBeChecked()
+  await expect(duotone).toBeChecked()
+  await expect(gradient).not.toBeChecked()
+  await expect(gradient).toBeEnabled()
+  expect((await downloadPng(page)).equals(treated), 'only the final Berry duotone image is downloadable').toBe(true)
+
+  await gradient.check()
+  await colors.getByRole('radio', { name: 'Copper', exact: true }).check()
+  await duotone.uncheck()
+  await colors.getByRole('radio', { name: 'Lime', exact: true }).check()
+  await duotone.check()
+  await colors.getByRole('radio', { name: 'Berry', exact: true }).check()
+  await gradient.uncheck()
+  await duotone.uncheck()
+  await ready(page, url)
+  await expect(colors.getByRole('radio', { name: 'Berry', exact: true })).toBeChecked()
+  await expect(duotone).not.toBeChecked()
+  await expect(gradient).toBeDisabled()
+  await expect(gradient).not.toBeChecked()
+  expect((await downloadPng(page)).equals(untreated), 'a superseded duotone render must not replace the final untreated photo').toBe(true)
 })

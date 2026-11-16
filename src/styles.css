@@ -194,7 +194,6 @@
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--color-ink) 35%, var(--color-surface));
-  border-top: 3px solid var(--color-accent);
 }
 
 .preview-panel, .settings-panel {
@@ -222,12 +221,6 @@
   font-family: var(--font-heading-caps);
   font-size: clamp(1.5rem, 2.5vw, 1.875rem);
   text-transform: uppercase;
-}
-
-.panel-description {
-  grid-column: 1 / -1;
-  color: var(--color-muted);
-  font-size: 1rem;
 }
 
 .upload-fieldset {
@@ -401,10 +394,6 @@
 .format-controls {
   grid-template-columns: repeat(2, max-content);
   column-gap: 2rem;
-}
-
-.format-controls .panel-description {
-  grid-column: 1 / -1;
 }
 
 .toggle-label {

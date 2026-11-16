@@ -276,10 +276,12 @@ function applyDuotone(context: CanvasRenderingContext2D, ink: string) {
 }
 
 /** Feather navy beneath corner artwork, leaving the middle 40% of the photo clear. */
-function shadeCorners(context: CanvasRenderingContext2D) {
+function shadeCorners(context: CanvasRenderingContext2D, shadeTop: boolean) {
   const { width, height } = context.canvas;
   const navy = getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim();
-  for (const [x, y] of [[0, 0], [width, 0], [0, height], [width, height]]) {
+  const corners = [[0, height], [width, height]];
+  if (shadeTop) corners.push([0, 0], [width, 0]);
+  for (const [x, y] of corners) {
     context.save();
     try {
       context.translate(x, y);
@@ -311,7 +313,37 @@ function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x:
   }
 }
 
-function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string) {
+/** Wrap at words, splitting oversized tokens; only reduce type when vertical space runs out. */
+function layoutHost(context: CanvasRenderingContext2D, text: string, width: number, maxHeight: number, normalLineHeight: number) {
+  let fontSize = 44;
+  for (;;) {
+    context.font = `${fontSize}px Iosevka`;
+    const lines: string[] = [];
+    let line = '';
+    for (const word of text.trim().split(/\s+/).filter(Boolean)) {
+      if (line && context.measureText(`${line} ${word}`).width > width) {
+        lines.push(line);
+        line = '';
+      }
+      for (const character of (line ? ' ' : '') + word) {
+        if (line && context.measureText(line + character).width > width) {
+          lines.push(line);
+          line = '';
+        }
+        line += character;
+      }
+    }
+    if (line) lines.push(line);
+    const lineHeight = normalLineHeight * fontSize / 44;
+    const height = lines.length * lineHeight;
+    if (height <= maxHeight && lines.every(line => context.measureText(line).width <= width)) {
+      return { lines, fontSize, lineHeight, height };
+    }
+    fontSize *= Math.min(0.9, Math.sqrt(maxHeight / height));
+  }
+}
+
+function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string, detailsBottom: number) {
   context.fillStyle = ink;
   context.font = '44px Iosevka';
   context.textBaseline = 'top';
@@ -323,34 +355,10 @@ function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: 
     context.fillText(line, right, 16 + index * lineHeight);
   });
 
-  // Wrap host names within the left column, including unbroken long names.
-  // Shrink unusually long entries rather than clipping or overlapping the schedule.
-  let lines: string[] = [];
-  let fontSize = 44;
-  do {
-    context.font = `${fontSize}px Iosevka`;
-    lines = [];
-    let line = '';
-    for (const word of host.trim().split(/\s+/).filter(Boolean)) {
-      if (line && context.measureText(`${line} ${word}`).width > 500) {
-        lines.push(line);
-        line = '';
-      }
-      for (const character of (line ? ' ' : '') + word) {
-        if (context.measureText(line + character).width > 500) {
-          lines.push(line);
-          line = '';
-        }
-        line += character;
-      }
-    }
-    if (line) lines.push(line);
-    if (lines.length <= 3) break;
-    fontSize -= 2;
-  } while (fontSize >= 20);
-  lines.forEach((line, index) => context.fillText(line, left, 66 + index * lineHeight));
+  const hostLayout = layoutHost(context, host, 500, detailsBottom - 66 - lineHeight, lineHeight);
+  hostLayout.lines.forEach((line, index) => context.fillText(line, left, 66 + index * hostLayout.lineHeight));
 
-  drawShowDate(context, date, left, 66 + lines.length * lineHeight);
+  drawShowDate(context, date, left, 66 + hostLayout.height);
 }
 
 function drawShowDate(context: CanvasRenderingContext2D, date: string, x: number, y: number) {
@@ -364,15 +372,53 @@ function drawShowDate(context: CanvasRenderingContext2D, date: string, x: number
   }
 }
 
-/** Opaque 1080px PNG. Stable grain never covers logos; AFW is always included. */
+function formatTime(time: string) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return '';
+  const [hour, minute] = time.split(':').map(Number);
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')}${hour < 12 ? 'am' : 'pm'}`;
+}
+
+function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string, cc: boolean, startTime: string, finishTime: string) {
+  context.fillStyle = ink;
+  context.font = '44px Iosevka';
+  context.textBaseline = 'top';
+  const left = 28;
+  const right = 574;
+  const lineHeight = 54;
+  const hostLayout = layoutHost(context, host.trim() ? `with ${host.trim()}` : '', 510,
+    context.canvas.height - 28 - 22 - 2 * lineHeight, lineHeight);
+  const top = context.canvas.height - 22 - 2 * lineHeight - Math.max(lineHeight, hostLayout.height);
+  const rightTop = context.canvas.height - 22 - 3 * lineHeight;
+  context.font = '44px Iosevka';
+  context.fillText('A Friendly Wave', left, top, 510);
+  context.fillText(cc ? 'Community Curation' : 'Sunday Sessions', left, top + lineHeight, 510);
+  context.font = `${hostLayout.fontSize}px Iosevka`;
+  hostLayout.lines.forEach((line, index) => context.fillText(line, left, top + 2 * lineHeight + index * hostLayout.lineHeight));
+  context.font = '44px Iosevka';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [year, month, day] = date.split('-').map(Number);
+    const showDate = new Date(0);
+    showDate.setFullYear(year, month - 1, day);
+    const formattedDate = showDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const label = cc ? formattedDate : formattedDate.replace(',', '');
+    context.fillText(label, right, rightTop, 478);
+  }
+  const time = cc ? [formatTime(startTime), formatTime(finishTime)].filter(Boolean).join('–') : '10:15am–1:15pm';
+  if (time) context.fillText(time, right, rightTop + lineHeight, 478);
+  context.fillText('Cassette Café', right, rightTop + 2 * lineHeight, 478);
+}
+
+/** Opaque 1080px PNG. Stable grain never covers artwork. */
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { format = 'square', radio = 'island-city', host = '', date = '', color = 'lime', duotone = false, cornerGradient = true }: {
+  { format = 'square', radio = 'island-city', host = '', date = '', startTime = '', finishTime = '', color = 'lime', duotone = false, cornerGradient = false }: {
     format?: OutputFormat;
-    radio?: 'island-city' | 'chir-fm';
+    radio?: 'island-city' | 'chir-fm' | 'sunday' | 'cc';
     host?: string;
     date?: string;
+    startTime?: string;
+    finishTime?: string;
     color?: Color;
     duotone?: boolean;
     cornerGradient?: boolean;
@@ -381,12 +427,13 @@ export async function renderThumbnail(
   const ratio = outputRatio(format);
   const height = Math.round(SIZE / ratio);
   const normalized = clampCrop(crop, photo, ratio);
+  const footer = radio === 'sunday' || radio === 'cc';
   const [island, afw, chir] = await Promise.all([
     radio === 'island-city' ? loadIslandLogo() : undefined,
-    loadAfwLogo(),
+    !footer ? loadAfwLogo() : undefined,
     radio === 'chir-fm' ? loadChirLogo() : undefined,
   ]);
-  if (radio === 'chir-fm' || date) await document.fonts.load('44px Iosevka');
+  if (radio !== 'island-city' || date) await document.fonts.load('44px Iosevka');
   const { element, context } = canvas(SIZE, height, true);
   try {
     const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height * ratio));
@@ -402,19 +449,18 @@ export async function renderThumbnail(
     }
     addGrain(context);
     const ink = getComputedStyle(document.documentElement).getPropertyValue(`--color-brand-${color}`).trim();
-    if (duotone) {
-      applyDuotone(context, ink);
-      if (cornerGradient) shadeCorners(context);
-    }
+    if (duotone) applyDuotone(context, ink);
+    if (cornerGradient) shadeCorners(context, !footer);
     if (island) {
       drawLogo(context, island, 49, 49, ink);
       context.fillStyle = ink;
       context.textBaseline = 'bottom';
       drawShowDate(context, date, 24, height - 20);
     }
-    if (radio === 'chir-fm') drawChirDetails(context, host, date, ink);
+    if (radio === 'chir-fm') drawChirDetails(context, host, date, ink, height - (chir?.height ?? 0) - 40);
     if (chir) drawLogo(context, chir, 24, height - chir.height - 20, ink);
-    drawLogo(context, afw, SIZE - afw.width, height - afw.height, ink);
+    if (footer) drawFooterDetails(context, host, date, ink, radio === 'cc', startTime, finishTime);
+    if (afw) drawLogo(context, afw, SIZE - afw.width, height - afw.height, ink);
     return await toBlob(element);
   } finally {
     releaseCanvas(element);

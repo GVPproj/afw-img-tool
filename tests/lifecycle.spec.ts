@@ -204,7 +204,7 @@ test('stale processed previews stay hidden during settings updates and failed re
   const changes = [
     () => page.getByRole('radio', { name: 'Copper', exact: true }).check(),
     () => page.getByRole('checkbox', { name: 'Duotone', exact: true }).check(),
-    () => page.getByRole('checkbox', { name: 'Corner gradient', exact: true }).uncheck(),
+    () => page.getByRole('checkbox', { name: 'Corner gradient', exact: true }).check(),
     () => page.getByRole('radio', { name: 'Island City', exact: true }).check(),
     () => page.getByRole('radio', { name: 'CHIR FM', exact: true }).check(),
   ]

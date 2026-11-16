@@ -405,6 +405,17 @@
   cursor: pointer;
 }
 
+.show-details-fields {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.time-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
 .show-field {
   display: grid;
   min-width: 0;
@@ -510,6 +521,10 @@ input:disabled, .file-input:disabled::file-selector-button {
 }
 
 @media (width > 900px) {
+  .show-details-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

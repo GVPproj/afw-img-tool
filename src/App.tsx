@@ -150,10 +150,10 @@ export function App() {
     <main className="app-shell">
       <section className="workspace" aria-label="Thumbnail editor">
         <div className="preview-panel">
-          <fieldset className="fieldset upload-fieldset">
-            <legend className="fieldset-legend">Choose a photo</legend>
+          <fieldset className="upload-fieldset">
+            <legend>Choose a photo</legend>
             <label className="sr-only" htmlFor="photo">Photo file</label>
-            <input ref={fileInput} id="photo" className="file-input file-input-bordered" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" aria-describedby="format-help" onChange={event => { void selectPhoto(event.target.files?.[0]) }} />
+            <input ref={fileInput} id="photo" className="file-input" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" aria-describedby="format-help" onChange={event => { void selectPhoto(event.target.files?.[0]) }} />
             <p id="format-help">JPEG or PNG. HEIC isn’t supported yet.</p>
           </fieldset>
           <div className="preview-area">
@@ -194,23 +194,23 @@ export function App() {
             <div className="radio-options">
               {(['chir-fm', 'sunday', 'cc', 'island-city'] as const).map(next => <label className="toggle-label" key={next}>
                 <span>{next === 'island-city' ? 'Island City' : next === 'sunday' ? 'Sunday' : next === 'cc' ? 'CC' : 'CHIR FM'}</span>
-                <input className="radio radio-primary" type="radio" name="radio-station" value={next} checked={radio === next} onChange={() => { renderRevision.current++; setError(''); setRadio(next) }} />
+                <input className="radio" type="radio" name="radio-station" value={next} checked={radio === next} onChange={() => { renderRevision.current++; setError(''); setRadio(next) }} />
               </label>)}
             </div>
             <div className="show-details-fields">
               <label className="show-field" htmlFor="show-date">Show date
-                <input id="show-date" className="input input-bordered" type="date" value={date} onChange={event => { renderRevision.current++; setError(''); setDate(event.target.value) }} />
+                <input id="show-date" className="input" type="date" value={date} onChange={event => { renderRevision.current++; setError(''); setDate(event.target.value) }} />
               </label>
               {radio !== 'island-city' && <label className="show-field" htmlFor="show-host">Host name
-                <input id="show-host" className="input input-bordered" type="text" maxLength={120} placeholder="Christina Novak & Emily McMartin" value={host} onChange={event => { renderRevision.current++; setError(''); setHost(event.target.value) }} />
+                <input id="show-host" className="input" type="text" maxLength={120} placeholder="Christina Novak & Emily McMartin" value={host} onChange={event => { renderRevision.current++; setError(''); setHost(event.target.value) }} />
               </label>}
             </div>
             {radio === 'cc' && <div className="time-fields">
               <label className="show-field" htmlFor="start-time">Start time
-                <input id="start-time" className="input input-bordered" type="time" value={startTime} onChange={event => { renderRevision.current++; setError(''); setStartTime(event.target.value) }} />
+                <input id="start-time" className="input" type="time" value={startTime} onChange={event => { renderRevision.current++; setError(''); setStartTime(event.target.value) }} />
               </label>
               <label className="show-field" htmlFor="finish-time">Finish time
-                <input id="finish-time" className="input input-bordered" type="time" value={finishTime} onChange={event => { renderRevision.current++; setError(''); setFinishTime(event.target.value) }} />
+                <input id="finish-time" className="input" type="time" value={finishTime} onChange={event => { renderRevision.current++; setError(''); setFinishTime(event.target.value) }} />
               </label>
             </div>}
           </fieldset>
@@ -218,23 +218,23 @@ export function App() {
             <div className="radio-options">
               {(['lime', 'copper', 'berry'] as const).map(next => <label className="toggle-label" key={next}>
                 <span>{next[0].toUpperCase() + next.slice(1)}</span>
-                <input className="radio radio-primary" type="radio" name="color" value={next} checked={color === next} onChange={() => { renderRevision.current++; setError(''); setColor(next) }} />
+                <input className="radio" type="radio" name="color" value={next} checked={color === next} onChange={() => { renderRevision.current++; setError(''); setColor(next) }} />
               </label>)}
             </div>
             <label className="toggle-label">
               <span>Duotone</span>
-              <input className="toggle toggle-primary" type="checkbox" checked={duotone} onChange={event => { renderRevision.current++; setError(''); setDuotone(event.target.checked) }} />
+              <input className="toggle" type="checkbox" checked={duotone} onChange={event => { renderRevision.current++; setError(''); setDuotone(event.target.checked) }} />
             </label>
             <label className="toggle-label">
-              <span>Corner gradient</span>
-              <span className='mr-auto'>(Adds Legibility)</span>
-              <input className="toggle toggle-primary" type="checkbox" checked={cornerGradient} onChange={event => { renderRevision.current++; setError(''); setCornerGradient(event.target.checked) }} />
+              <span id="corner-gradient-label">Corner gradient</span>
+              <span id="corner-gradient-help" className='mr-auto'>(Adds Legibility)</span>
+              <input className="toggle" type="checkbox" aria-labelledby="corner-gradient-label" aria-describedby="corner-gradient-help" checked={cornerGradient} onChange={event => { renderRevision.current++; setError(''); setCornerGradient(event.target.checked) }} />
             </label>
           </fieldset>
           <fieldset className="artwork-controls format-controls" aria-label="Output format">
             {(['square', 'portrait'] as const).map(next => <label className="toggle-label" key={next}>
               <span>{next === 'square' ? 'Square' : '4:5'}</span>
-              <input className="radio radio-primary" type="radio" name="output-format" value={next} checked={format === next} onChange={() => {
+              <input className="radio" type="radio" name="output-format" value={next} checked={format === next} onChange={() => {
                 renderRevision.current++
                 drag.current = null
                 selectedFormat.current = next
@@ -244,9 +244,9 @@ export function App() {
               }} />
             </label>)}
           </fieldset>
-          <div className="panel-actions">{resultReady && !decoding ? <a className="btn btn-primary" href={result.url} download={result.filename}>Download PNG <span aria-hidden="true">↓</span></a> : <button className="btn btn-primary" disabled aria-busy={decoding || updating}>Download PNG {decoding || updating ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <span aria-hidden="true">↓</span>}</button>}</div>
+          <div className="panel-actions">{resultReady && !decoding ? <a className="btn btn-primary" href={result.url} download={result.filename}>Download PNG <span aria-hidden="true">↓</span></a> : <button className="btn btn-primary" disabled aria-busy={decoding || updating}>Download PNG {decoding || updating ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">↓</span>}</button>}</div>
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{status}</div>
-          {error && <div className="alert alert-error" role="alert"><span>{error}</span>{photo && <button className="btn btn-outline" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry preview</button>}</div>}
+          {error && <div className="alert" role="alert"><span>{error}</span>{photo && <button className="btn btn-outline" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry preview</button>}</div>}
         </aside>
       </section>
     </main>

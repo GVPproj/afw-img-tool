@@ -23,7 +23,7 @@
   touch-action: none;
   user-select: none;
   cursor: ns-resize;
-  background: conic-gradient(from 225deg, var(--color-accent) var(--sweep), var(--color-base-300) 0 270deg, transparent 0);
+  background: conic-gradient(from 225deg, var(--color-accent) var(--sweep), var(--color-surface-raised) 0 270deg, transparent 0);
 }
 
 .crop-dial-face {
@@ -50,7 +50,7 @@
 
 .crop-dial[aria-disabled="true"] {
   cursor: not-allowed;
-  background: var(--color-base-300);
+  background: var(--color-surface-raised);
 }
 
 .crop-dial[aria-disabled="true"] .crop-dial-face i {

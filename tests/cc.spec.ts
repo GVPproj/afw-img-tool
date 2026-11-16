@@ -6,7 +6,7 @@ for (const format of ['Square', '4:5']) {
       const original = CanvasRenderingContext2D.prototype.fillText
       ;(window as any).textCalls = []
       CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) {
-        ;(window as any).textCalls.push({ text, x, y })
+        ;(window as any).textCalls.push({ text, x, y, scale: this.getTransform().a })
         if (maxWidth === undefined) original.call(this, text, x, y)
         else original.call(this, text, x, y, maxWidth)
       }
@@ -33,6 +33,10 @@ for (const format of ['Square', '4:5']) {
       'A Friendly Wave', 'Community Curation', 'with Michelle Footz',
       'Saturday, October 24', '4:00pm–5:00pm', 'Cassette Café',
     ])
+    // Layout stays in design coordinates; the canvas scales it to export pixels.
+    expect(lines[0].scale).toBeCloseTo(1.6)
+    await expect(page.locator('.result-image')).toHaveJSProperty('naturalWidth', 1728)
+    await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', format === 'Square' ? 1728 : 2160)
     expect(lines[0].y).toBe((format === 'Square' ? 1080 : 1350) - 184)
     expect(lines[3].y).toBe(lines[0].y)
     await expect(page.getByAltText('Processed thumbnail with Community Curation show details')).toBeVisible()

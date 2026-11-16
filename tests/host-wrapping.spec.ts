@@ -11,7 +11,7 @@ for (const station of ['CHIR FM', 'Sunday']) {
             const metrics = this.measureText(text)
             ;(window as any).textCalls.push({ text, x, y, maxWidth, width: metrics.width,
               top: y - metrics.actualBoundingBoxAscent, bottom: y + metrics.actualBoundingBoxDescent,
-              fontSize: parseFloat(this.font) })
+              fontSize: parseFloat(this.font), scale: this.getTransform().a })
             if (maxWidth === undefined) original.call(this, text, x, y)
             else original.call(this, text, x, y, maxWidth)
           }
@@ -39,6 +39,8 @@ for (const station of ['CHIR FM', 'Sunday']) {
           return calls.slice(start)
         })
         const sunday = station === 'Sunday'
+        // Text metrics are in design units, with the export transform applied later.
+        expect(calls[0].scale).toBeCloseTo(1.6)
         const height = format === 'Square' ? 1080 : 1350
         const hosts = sunday ? calls.slice(2, -3) : calls.slice(4, -1)
         expect(hosts.length).toBeGreaterThan(1)

@@ -53,23 +53,31 @@ async function inspectTint(page: Page, png: Buffer) {
     image.src = `data:image/png;base64,${base64}`
     await image.decode()
     const canvas = document.createElement('canvas')
-    canvas.width = image.naturalWidth
-    canvas.height = image.naturalHeight
+    // Artwork and endpoint samples use the unchanged 1080-wide design space.
+    canvas.width = 1080
+    canvas.height = Math.round(image.naturalHeight * 1080 / image.naturalWidth)
     const context = canvas.getContext('2d')!
-    context.drawImage(image, 0, 0)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
     const pixel = (x: number) => Array.from(context.getImageData(x, 400, 1, 1).data)
-    const midtones = context.getImageData(480, 400, 100, 100).data
+    // Inspect the full-density texture without adding analysis resampling.
+    const native = document.createElement('canvas')
+    native.width = image.naturalWidth
+    native.height = image.naturalHeight
+    const nativeContext = native.getContext('2d')!
+    nativeContext.drawImage(image, 0, 0)
+    const scale = image.naturalWidth / 1080
+    const midtones = nativeContext.getImageData(Math.round(480 * scale), Math.round(400 * scale), 100, 100).data
     const reds = new Set<number>()
     let neutralMidtones = true
     for (let i = 0; i < midtones.length; i += 4) {
       reds.add(midtones[i])
       if (midtones[i] !== midtones[i + 1] || midtones[i] !== midtones[i + 2]) neutralMidtones = false
     }
-    // Nearby repeating screen marks correlate; random grain alone does not.
+    // The 3.2-design-pixel screen now repeats roughly 5px across and 2px down.
     let sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0, samples = 0
-    for (let y = 0; y < 99; y++) for (let x = 0; x < 97; x++) {
+    for (let y = 0; y < 98; y++) for (let x = 0; x < 95; x++) {
       const a = midtones[(y * 100 + x) * 4]
-      const b = midtones[((y + 1) * 100 + x + 3) * 4]
+      const b = midtones[((y + 2) * 100 + x + 5) * 4]
       sumA += a; sumB += b; sumAA += a * a; sumBB += b * b; sumAB += a * b; samples++
     }
     const screenCorrelation = (samples * sumAB - sumA * sumB)
@@ -99,9 +107,9 @@ async function inspectTint(page: Page, png: Buffer) {
     const photo = document.createElement('canvas')
     photo.width = canvas.width
     photo.height = 180
-    photo.getContext('2d')!.drawImage(image, 0, 300, canvas.width, 180, 0, 0, canvas.width, 180)
+    photo.getContext('2d')!.drawImage(canvas, 0, 300, canvas.width, 180, 0, 0, canvas.width, 180)
     return {
-      width: canvas.width, height: canvas.height, artwork,
+      width: image.naturalWidth, height: image.naturalHeight, artwork,
       photoPixels: photo.toDataURL(), neutralMidtones,
       shadow: pixel(100), highlight: pixel(900), grainLevels: reds.size,
       midtoneRange: [Math.min(...reds), Math.max(...reds)], screenCorrelation,
@@ -114,9 +122,9 @@ async function inspectTint(page: Page, png: Buffer) {
 }
 
 const colorCases = [
-  { color: 'Copper', highlight: [224, 108, 58], format: 'Square', height: 1080 },
-  { color: 'Berry', highlight: [179, 68, 121], format: '4:5', height: 1350 },
-  { color: 'Lime', highlight: [226, 255, 120], format: '4:5', height: 1350 },
+  { color: 'Copper', highlight: [224, 108, 58], format: 'Square', height: 1728 },
+  { color: 'Berry', highlight: [179, 68, 121], format: '4:5', height: 2160 },
+  { color: 'Lime', highlight: [226, 255, 120], format: '4:5', height: 2160 },
 ]
 
 for (const { color, highlight, format, height } of colorCases) {
@@ -140,7 +148,7 @@ test(`CHIR ${color} duotone maps photo tones and matches text and both logos in 
   url = await ready(page, url)
   const treated = await downloadPng(page)
   const pixels = await inspectTint(page, treated)
-  expect(pixels).toMatchObject({ width: 1080, height, shadow: [0, 26, 114, 255], highlight: [...highlight, 255] })
+  expect(pixels).toMatchObject({ width: 1728, height, shadow: [0, 26, 114, 255], highlight: [...highlight, 255] })
   // Screened midtones have a repeating print structure, not just random grain.
   expect(pixels.screenCorrelation).toBeGreaterThan(0.15)
   // Keep the print texture subtle rather than splitting midtones into two inks.
@@ -190,7 +198,7 @@ test(`${format}: all colors recolor text and both logos without changing photo p
     await expect(gradient).not.toBeChecked()
     const pixels = await inspectTint(page, await downloadPng(page))
     expect(pixels).toMatchObject({
-      width: 1080, height: format === 'Square' ? 1080 : 1350,
+      width: 1728, height: format === 'Square' ? 1728 : 2160,
       shadow: [0, 0, 0, 255], highlight: [255, 255, 255, 255],
       artwork: highlight, neutralMidtones: true,
     })
@@ -272,16 +280,18 @@ test(`${color} keeps canonical text and logo colors on dark and bright photos wi
       const canvas = document.createElement('canvas')
       canvas.width = canvas.height = 1080
       const context = canvas.getContext('2d')!
-      context.drawImage(image, 0, 0)
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
       return context.getImageData(0, 0, 1080, 1080).data
     }
     const before = await pixels(dark)
     const after = await pixels(bright)
     return [[0, 0, 350, 50], [0, 880, 300, 200], [630, 930, 80, 150]].map(([left, top, width, height]) => {
-      for (let y = top; y < top + height; y++) for (let x = left; x < left + width; x++) {
-        const i = (y * 1080 + x) * 4
-        // On black, only fully opaque artwork can have this exact theme color.
-        if (highlight.every((channel, index) => before[i + index] === channel)) {
+      for (let y = top + 1; y < top + height - 1; y++) for (let x = left + 1; x < left + width - 1; x++) {
+        // Require a solid 3x3 interior, not a resampled edge that rounded to ink.
+        const solid = [-1, 0, 1].every(dy => [-1, 0, 1].every(dx =>
+          highlight.every((channel, index) => before[((y + dy) * 1080 + x + dx) * 4 + index] === channel)))
+        if (solid) {
+          const i = (y * 1080 + x) * 4
           return Array.from(after.slice(i, i + 3))
         }
       }
@@ -323,10 +333,10 @@ test(`${format} duotone corners gently darken while the central photo stays unto
     image.src = `data:image/png;base64,${shaded}`
     await image.decode()
     const canvas = document.createElement('canvas')
-    canvas.width = image.naturalWidth
-    canvas.height = image.naturalHeight
+    canvas.width = 1080
+    canvas.height = Math.round(image.naturalHeight * 1080 / image.naturalWidth)
     const context = canvas.getContext('2d')!
-    context.drawImage(image, 0, 0)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
     const { width, height } = canvas
     const sample = (x: number, y: number) => Array.from(context.getImageData(x, y, 1, 1).data)
     // Sample background only, outside the text and opaque logo shapes.
@@ -339,7 +349,7 @@ test(`${format} duotone corners gently darken while the central photo stays unto
     const unshadedImage = new Image()
     unshadedImage.src = `data:image/png;base64,${unshaded}`
     await unshadedImage.decode()
-    context.drawImage(unshadedImage, 0, 0)
+    context.drawImage(unshadedImage, 0, 0, canvas.width, canvas.height)
     const unshadedCorners = points.map(([x, y]) => sample(x, y))
     const unshadedCenter = context.getImageData(width / 2 - 100, height / 2 - 50, 200, 100).data
     return { corners, centerColors: [...centerColors], topMiddle, unshadedCorners,

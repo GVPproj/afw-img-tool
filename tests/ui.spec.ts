@@ -54,7 +54,7 @@ test('loading and retry controls remain readable and respect reduced motion', as
     const encode = HTMLCanvasElement.prototype.toBlob
     HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
       encode.call(this, blob => {
-        if (this.width === 1080 && this.height === 1080 && type === 'image/png') {
+        if (this.width === 1728 && this.height === 1728 && type === 'image/png') {
           const target = window as RenderWindow
           target.finishThumbnail = (fail = false) => {
             delete target.finishThumbnail

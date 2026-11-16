@@ -44,23 +44,24 @@ async function downloadedPixels(page: Page) {
     downloaded.src = url
     await Promise.all([preview.decode(), downloaded.decode()])
     const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = 1080
+    canvas.width = canvas.height = 1728
     const ctx = canvas.getContext('2d')!
     const pixels = (image: HTMLImageElement) => {
-      ctx.clearRect(0, 0, 1080, 1080)
+      ctx.clearRect(0, 0, 1728, 1728)
       ctx.drawImage(image, 0, 0)
-      return ctx.getImageData(0, 0, 1080, 1080).data
+      return ctx.getImageData(0, 0, 1728, 1728).data
     }
     const actual = pixels(downloaded)
     const shown = pixels(preview)
-    return downloaded.naturalWidth === 1080 && downloaded.naturalHeight === 1080 &&
+    return downloaded.naturalWidth === 1728 && downloaded.naturalHeight === 1728 &&
+      preview.naturalWidth === 1728 && preview.naturalHeight === 1728 &&
       actual.every((value, index) => value === shown[index])
   }, dataUrl)
   expect(matches, 'downloaded PNG pixels must match the live preview').toBe(true)
   return dataUrl
 }
 
-test('private photo → live keyboard crop → 1080 PNG; reset and replacement', async ({ page }) => {
+test('private photo → live keyboard crop → 1728 PNG; reset and replacement', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
@@ -96,7 +97,7 @@ test('private photo → live keyboard crop → 1080 PNG; reset and replacement',
     }
     return { width: image.naturalWidth, height: image.naturalHeight, lime, opaque }
   })
-  expect(details).toMatchObject({ width: 1080, height: 1080, opaque: true })
+  expect(details).toMatchObject({ width: 1728, height: 1728, opaque: true })
   expect(details.lime).toBeGreaterThan(1000)
   const downloadEvent = page.waitForEvent('download')
   await download.click()
@@ -123,7 +124,10 @@ test('portrait toggle updates crop and PNG dimensions, then returns to square', 
   const selection = page.locator('.crop-selection')
   const box = (await selection.boundingBox())!
   expect(box.width / box.height).toBeCloseTo(0.8, 2)
-  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1350)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalWidth', 1728)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 2160)
+  await expect(page.locator('.result-image')).toHaveAttribute('width', '1728')
+  await expect(page.locator('.result-image')).toHaveAttribute('height', '2160')
   await page.getByRole('slider', { name: 'Crop size' }).press('PageDown')
   url = await liveResult(page, url)
   await page.getByRole('button', { name: 'Reset crop' }).click()
@@ -134,11 +138,14 @@ test('portrait toggle updates crop and PNG dimensions, then returns to square', 
   const chunks: Buffer[] = []
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
   const png = Buffer.concat(chunks)
-  expect(png.readUInt32BE(16)).toBe(1080)
-  expect(png.readUInt32BE(20)).toBe(1350)
+  expect(png.readUInt32BE(16)).toBe(1728)
+  expect(png.readUInt32BE(20)).toBe(2160)
   await page.getByRole('radio', { name: 'Square', exact: true }).check()
   await liveResult(page, url)
-  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1080)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalWidth', 1728)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1728)
+  await expect(page.locator('.result-image')).toHaveAttribute('width', '1728')
+  await expect(page.locator('.result-image')).toHaveAttribute('height', '1728')
   const square = (await selection.boundingBox())!
   expect(square.width / square.height).toBeCloseTo(1, 2)
 })
@@ -287,7 +294,8 @@ test('Island City always includes artwork and restores identical pixels after sw
       const image = new Image()
       image.src = url
       await image.decode()
-      ctx.drawImage(image, 0, 0)
+      // Analyze artwork in its unchanged 1080-design-unit coordinate system.
+      ctx.drawImage(image, 0, 0, 1080, 1080)
       return ctx.getImageData(0, 0, 1080, 1080).data
     }))
     const ink = images.map(() => ({ topLeft: 0, lowerRight: 0 }))
@@ -362,7 +370,7 @@ test('CHIR FM shows date and host controls and renders show details without Isla
   url = await liveResult(page, url)
   await page.getByRole('radio', { name: '4:5', exact: true }).check()
   url = await liveResult(page, url)
-  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1350)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 2160)
   await page.getByRole('radio', { name: 'Island City', exact: true }).check()
   url = await liveResult(page, url)
   await expect(page.getByLabel('Show date')).toBeVisible()
@@ -383,10 +391,11 @@ test('CHIR vector logo stays inset at bottom left in both formats and is absent 
   const logoBounds = () => page.locator('.result-image').evaluate(async (image: HTMLImageElement) => {
     await image.decode()
     const canvas = document.createElement('canvas')
-    canvas.width = image.naturalWidth
-    canvas.height = image.naturalHeight
+    // Keep logo bounds in design units for both square and portrait outputs.
+    canvas.width = 1080
+    canvas.height = 1080 * image.naturalHeight / image.naturalWidth
     const ctx = canvas.getContext('2d')!
-    ctx.drawImage(image, 0, 0)
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
     const { data } = ctx.getImageData(0, canvas.height - 200, 300, 200)
     const xs: number[] = [], ys: number[] = []
     for (let y = 0; y < 200; y++) for (let x = 0; x < 300; x++) {

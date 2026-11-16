@@ -73,10 +73,11 @@ async function inspectPng(page: Page, png: Buffer, ink: number[]) {
     image.src = `data:image/png;base64,${base64}`
     await image.decode()
     const canvas = document.createElement('canvas')
-    canvas.width = image.naturalWidth
-    canvas.height = image.naturalHeight
+    // Keep artwork regions in design units, but report the actual export size.
+    canvas.width = 1080
+    canvas.height = Math.round(image.naturalHeight * 1080 / image.naturalWidth)
     const context = canvas.getContext('2d')!
-    context.drawImage(image, 0, 0)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
     const region = (left: number, top: number, width: number, height: number) => {
       const { data } = context.getImageData(left, top, width, height)
       let count = 0, nonBlack = 0, minX = width, maxY = -1
@@ -95,9 +96,9 @@ async function inspectPng(page: Page, png: Buffer, ink: number[]) {
     const photo = document.createElement('canvas')
     photo.width = 1080
     photo.height = 80
-    photo.getContext('2d')!.drawImage(image, 0, Math.floor(canvas.height / 2) - 40, 1080, 80, 0, 0, 1080, 80)
+    photo.getContext('2d')!.drawImage(canvas, 0, Math.floor(canvas.height / 2) - 40, 1080, 80, 0, 0, 1080, 80)
     return {
-      width: canvas.width, height: canvas.height,
+      width: image.naturalWidth, height: image.naturalHeight,
       island: region(49, 49, 324, 302),
       date: region(0, canvas.height - 90, 600, 90),
       afw: region(626, canvas.height - 442, 454, 442),
@@ -109,8 +110,8 @@ async function inspectPng(page: Page, png: Buffer, ink: number[]) {
 }
 
 const formats = [
-  { format: 'Square', height: 1080 },
-  { format: '4:5', height: 1350 },
+  { format: 'Square', height: 1080, outputHeight: 1728 },
+  { format: '4:5', height: 1350, outputHeight: 2160 },
 ]
 const colors = [
   { color: 'Lime', ink: [226, 255, 120] },
@@ -118,7 +119,7 @@ const colors = [
   { color: 'Berry', ink: [179, 68, 121] },
 ]
 
-for (const { format, height } of formats) {
+for (const { format, height, outputHeight } of formats) {
   test(`Island City ${format}: long-form date is bottom-left in 44px Iosevka; clearing it omits the draw`, async ({ page }) => {
     await spyText(page)
     await page.goto('/')
@@ -136,10 +137,10 @@ for (const { format, height } of formats) {
     const calls = await page.evaluate(() => (window as unknown as SpiedWindow).islandText)
     expect(calls.length).toBeGreaterThan(0)
     for (const call of calls) {
-      expect(call).toEqual({ text: 'November 10, 2026', x: 24, y: height - 20, font: '44px Iosevka', baseline: 'bottom', width: 1080, height })
+      expect(call).toEqual({ text: 'November 10, 2026', x: 24, y: height - 20, font: '44px Iosevka', baseline: 'bottom', width: 1728, height: outputHeight })
     }
     const drawn = await inspectPng(page, await downloadPng(page), colors[0].ink)
-    expect(drawn).toMatchObject({ width: 1080, height })
+    expect(drawn).toMatchObject({ width: 1728, height: outputHeight })
     expect(drawn.date.count).toBeGreaterThan(500)
     expect(drawn.date.left).toBeGreaterThanOrEqual(24)
     expect(drawn.date.left).toBeLessThan(30)
@@ -180,7 +181,7 @@ for (const { format, height } of formats) {
         url = await ready(page, url)
       }
       const pixels = await inspectPng(page, await downloadPng(page), ink)
-      expect(pixels).toMatchObject({ width: 1080, height, shadow: [0, 0, 0, 255], highlight: [255, 255, 255, 255] })
+      expect(pixels).toMatchObject({ width: 1728, height: outputHeight, shadow: [0, 0, 0, 255], highlight: [255, 255, 255, 255] })
       expect(pixels.island.count, `${color} Island logo ink`).toBeGreaterThan(1000)
       expect(pixels.date.count, `${color} date ink`).toBeGreaterThan(500)
       expect(pixels.afw.count, `${color} AFW logo ink`).toBeGreaterThan(1000)
@@ -212,7 +213,7 @@ for (const { format, height } of formats) {
     url = await ready(page, url)
     const unshaded = await downloadPng(page)
     const pixels = await inspectPng(page, unshaded, colors[1].ink)
-    expect(pixels).toMatchObject({ width: 1080, height, shadow: [0, 26, 114, 255], highlight: [224, 108, 58, 255], topRight: [224, 108, 58, 255] })
+    expect(pixels).toMatchObject({ width: 1728, height: outputHeight, shadow: [0, 26, 114, 255], highlight: [224, 108, 58, 255], topRight: [224, 108, 58, 255] })
     await gradient.check()
     url = await ready(page, url)
     const shaded = await inspectPng(page, await downloadPng(page), colors[1].ink)

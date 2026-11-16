@@ -1,4 +1,5 @@
 import { clampCrop, outputRatio, type OutputFormat, type Crop } from './crop';
+import { diffusionDither } from './dither';
 
 export type Color = 'copper' | 'berry' | 'lime';
 
@@ -12,8 +13,12 @@ export type Photo = {
   dispose: () => void;
 };
 
-const SIZE = 1080;
+export const OUTPUT_WIDTH = 1728;
+// Artwork is laid out in the original design coordinates, rasterized at export density.
+const DESIGN_WIDTH = 1080;
+const OUTPUT_SCALE = OUTPUT_WIDTH / DESIGN_WIDTH;
 const PREVIEW_SIZE = 1400;
+type Logo = { element: HTMLCanvasElement; width: number; height: number };
 const DECODE_ERROR = 'This image could not be decoded. It may be damaged or too large for this browser. Try exporting a smaller JPEG or PNG.';
 const HEIC_ERROR = 'HEIC/HEIF photos are not supported. Export or convert the photo to JPEG or PNG first (on iPhone, choose Most Compatible in Camera settings for future photos).';
 
@@ -137,8 +142,8 @@ export async function loadPhoto(file: File): Promise<Photo> {
   }
 }
 
-/** Rasterize at 2x, find actual alpha bounds, then resize the trimmed mark. */
-async function trimmedLogo(url: string, width: number): Promise<HTMLCanvasElement> {
+/** Rasterize at 2x design size, trim alpha bounds, then render at export density. */
+async function trimmedLogo(url: string, width: number): Promise<Logo> {
   const image = await loadImage(url);
   let raster: HTMLCanvasElement | undefined;
   let result: HTMLCanvasElement | undefined;
@@ -164,10 +169,11 @@ async function trimmedLogo(url: string, width: number): Promise<HTMLCanvasElemen
     if (right < left) throw new Error('The logo asset is empty.');
     const trimmedWidth = right - left + 1;
     const trimmedHeight = bottom - top + 1;
-    const target = canvas(width, Math.max(1, Math.round(trimmedHeight * width / trimmedWidth)));
+    const height = Math.max(1, Math.round(trimmedHeight * width / trimmedWidth));
+    const target = canvas(Math.ceil(width * OUTPUT_SCALE), Math.ceil(height * OUTPUT_SCALE));
     result = target.element;
     target.context.drawImage(element, left, top, trimmedWidth, trimmedHeight, 0, 0, result.width, result.height);
-    return result;
+    return { element: result, width, height };
   } catch (error) {
     if (result) releaseCanvas(result);
     throw error;
@@ -179,7 +185,7 @@ async function trimmedLogo(url: string, width: number): Promise<HTMLCanvasElemen
 
 function cachedLogo(url: string, width: number) {
   // Cache only a fixed asset, never photo data; allow retry after a load failure.
-  let logo: Promise<HTMLCanvasElement> | undefined;
+  let logo: Promise<Logo> | undefined;
   return () => {
     logo ??= trimmedLogo(url, width).catch(() => {
       logo = undefined;
@@ -197,9 +203,9 @@ const loadAfwLogo = cachedLogo(new URL('../assets/Logo-Mark_AFW.svg', import.met
 let grain: HTMLCanvasElement | undefined;
 function getGrain(): HTMLCanvasElement {
   if (grain) return grain;
-  const { element, context: noiseContext } = canvas(SIZE, SIZE, true);
+  const { element, context: noiseContext } = canvas(DESIGN_WIDTH, DESIGN_WIDTH, true);
   try {
-    const noise = noiseContext.createImageData(SIZE, SIZE);
+    const noise = noiseContext.createImageData(DESIGN_WIDTH, DESIGN_WIDTH);
     const { data } = noise;
     // Box–Muller: independent Gaussian samples, mean 128 and sigma 25.
     // One intensity per pixel gives monochrome (not colored) grain.
@@ -254,9 +260,9 @@ function applyDuotone(context: CanvasRenderingContext2D, ink: string) {
     const screenStrength = 0.12;
     for (let i = 0; i < data.length; i += 4) {
       const luminance = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-      const x = (i / 4) % image.width;
-      const y = Math.floor(i / 4 / image.width);
-      // A fine 3.2px screen rotated 22.5 degrees, fixed in export coordinates.
+      const x = ((i / 4) % image.width) / OUTPUT_SCALE;
+      const y = Math.floor(i / 4 / image.width) / OUTPUT_SCALE;
+      // Preserve the original 3.2-design-pixel screen at the larger output size.
       const u = (x * 0.92388 + y * 0.382683) * 2 * Math.PI / 3.2;
       const v = (y * 0.92388 - x * 0.382683) * 2 * Math.PI / 3.2;
       const screen = (Math.cos(u) + Math.cos(v) + 2) / 4;
@@ -269,6 +275,23 @@ function applyDuotone(context: CanvasRenderingContext2D, ink: string) {
       data[i + 1] = colors[tone + 1];
       data[i + 2] = colors[tone + 2];
     }
+    context.putImageData(image, 0, 0);
+  } finally {
+    releaseCanvas(element);
+  }
+}
+
+/** Resolve the two CSS inks, then dither the already-sized photo without grain. */
+function applyDiffusionDither(context: CanvasRenderingContext2D, ink: string) {
+  const { element, context: palette } = canvas(2, 1, true);
+  try {
+    palette.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-brand-navy').trim();
+    palette.fillRect(0, 0, 1, 1);
+    palette.fillStyle = ink;
+    palette.fillRect(1, 0, 1, 1);
+    const colors = palette.getImageData(0, 0, 2, 1).data;
+    const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
+    diffusionDither(image, [colors[0], colors[1], colors[2]], [colors[4], colors[5], colors[6]]);
     context.putImageData(image, 0, 0);
   } finally {
     releaseCanvas(element);
@@ -299,15 +322,15 @@ function shadeCorners(context: CanvasRenderingContext2D, shadeTop: boolean) {
   }
 }
 
-function drawLogo(context: CanvasRenderingContext2D, logo: HTMLCanvasElement, x: number, y: number, ink: string) {
-  // Recolor an alpha mask, never the cached original or the photo beneath it.
-  const { element, context: mask } = canvas(logo.width, logo.height);
+function drawLogo(context: CanvasRenderingContext2D, logo: Logo, x: number, y: number, ink: string) {
+  // Recolor the full-density alpha mask, never the cached original or the photo.
+  const { element, context: mask } = canvas(logo.element.width, logo.element.height);
   try {
-    mask.drawImage(logo, 0, 0);
+    mask.drawImage(logo.element, 0, 0);
     mask.globalCompositeOperation = 'source-in';
     mask.fillStyle = ink;
     mask.fillRect(0, 0, element.width, element.height);
-    context.drawImage(element, x, y);
+    context.drawImage(element, x, y, logo.width, logo.height);
   } finally {
     releaseCanvas(element);
   }
@@ -378,7 +401,7 @@ function formatTime(time: string) {
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')}${hour < 12 ? 'am' : 'pm'}`;
 }
 
-function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string, cc: boolean, startTime: string, finishTime: string) {
+function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date: string, ink: string, cc: boolean, startTime: string, finishTime: string, height: number) {
   context.fillStyle = ink;
   context.font = '44px Iosevka';
   context.textBaseline = 'top';
@@ -386,9 +409,9 @@ function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date
   const right = 574;
   const lineHeight = 54;
   const hostLayout = layoutHost(context, host.trim() ? `with ${host.trim()}` : '', 510,
-    context.canvas.height - 28 - 22 - 2 * lineHeight, lineHeight);
-  const top = context.canvas.height - 22 - 2 * lineHeight - Math.max(lineHeight, hostLayout.height);
-  const rightTop = context.canvas.height - 22 - 3 * lineHeight;
+    height - 28 - 22 - 2 * lineHeight, lineHeight);
+  const top = height - 22 - 2 * lineHeight - Math.max(lineHeight, hostLayout.height);
+  const rightTop = height - 22 - 3 * lineHeight;
   context.font = '44px Iosevka';
   context.fillText('A Friendly Wave', left, top, 510);
   context.fillText(cc ? 'Community Curation' : 'Sunday Sessions', left, top + lineHeight, 510);
@@ -408,11 +431,11 @@ function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date
   context.fillText('Cassette Café', right, rightTop + 2 * lineHeight, 478);
 }
 
-/** Opaque 1080px PNG. Stable grain never covers artwork. */
+/** Opaque 1728px PNG. Effects run at export size before full-density artwork. */
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { format = 'square', radio = 'island-city', host = '', date = '', startTime = '', finishTime = '', color = 'lime', duotone = false, cornerGradient = false }: {
+  { format = 'square', radio = 'island-city', host = '', date = '', startTime = '', finishTime = '', color = 'lime', duotone = false, dither = false, cornerGradient = false }: {
     format?: OutputFormat;
     radio?: 'island-city' | 'chir-fm' | 'sunday' | 'cc';
     host?: string;
@@ -421,11 +444,13 @@ export async function renderThumbnail(
     finishTime?: string;
     color?: Color;
     duotone?: boolean;
+    dither?: boolean;
     cornerGradient?: boolean;
   } = {},
 ): Promise<Blob> {
   const ratio = outputRatio(format);
-  const height = Math.round(SIZE / ratio);
+  const height = Math.round(OUTPUT_WIDTH / ratio);
+  const designHeight = DESIGN_WIDTH / ratio;
   const normalized = clampCrop(crop, photo, ratio);
   const footer = radio === 'sunday' || radio === 'cc';
   const [island, afw, chir] = await Promise.all([
@@ -434,33 +459,40 @@ export async function renderThumbnail(
     radio === 'chir-fm' ? loadChirLogo() : undefined,
   ]);
   if (radio !== 'island-city' || date) await document.fonts.load('44px Iosevka');
-  const { element, context } = canvas(SIZE, height, true);
+  const { element, context } = canvas(OUTPUT_WIDTH, height, true);
   try {
     const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height * ratio));
     const cropHeight = Math.min(photo.height, side / ratio);
     const left = Math.max(0, Math.min(Math.round(normalized.left * photo.width), photo.width - side));
     const top = Math.max(0, Math.min(Math.round(normalized.top * photo.height), photo.height - cropHeight));
     context.fillStyle = '#000';
-    context.fillRect(0, 0, SIZE, height);
+    context.fillRect(0, 0, OUTPUT_WIDTH, height);
     try {
-      context.drawImage(photo.source, left, top, side, cropHeight, 0, 0, SIZE, height);
+      context.drawImage(photo.source, left, top, side, cropHeight, 0, 0, OUTPUT_WIDTH, height);
     } catch {
       throw new Error('The photo is no longer available. Select it again before exporting.');
     }
-    addGrain(context);
     const ink = getComputedStyle(document.documentElement).getPropertyValue(`--color-brand-${color}`).trim();
-    if (duotone) applyDuotone(context, ink);
+    if (dither) {
+      applyDiffusionDither(context, ink);
+    } else {
+      addGrain(context);
+      if (duotone) applyDuotone(context, ink);
+    }
     if (cornerGradient) shadeCorners(context, !footer);
+    // Only artwork uses design coordinates. Photo pixels, dither and shading
+    // above are already at native output resolution and are never enlarged.
+    context.scale(OUTPUT_SCALE, OUTPUT_SCALE);
     if (island) {
       drawLogo(context, island, 49, 49, ink);
       context.fillStyle = ink;
       context.textBaseline = 'bottom';
-      drawShowDate(context, date, 24, height - 20);
+      drawShowDate(context, date, 24, designHeight - 20);
     }
-    if (radio === 'chir-fm') drawChirDetails(context, host, date, ink, height - (chir?.height ?? 0) - 40);
-    if (chir) drawLogo(context, chir, 24, height - chir.height - 20, ink);
-    if (footer) drawFooterDetails(context, host, date, ink, radio === 'cc', startTime, finishTime);
-    if (afw) drawLogo(context, afw, SIZE - afw.width, height - afw.height, ink);
+    if (radio === 'chir-fm') drawChirDetails(context, host, date, ink, designHeight - (chir?.height ?? 0) - 40);
+    if (chir) drawLogo(context, chir, 24, designHeight - chir.height - 20, ink);
+    if (footer) drawFooterDetails(context, host, date, ink, radio === 'cc', startTime, finishTime, designHeight);
+    if (afw) drawLogo(context, afw, DESIGN_WIDTH - afw.width, designHeight - afw.height, ink);
     return await toBlob(element);
   } finally {
     releaseCanvas(element);

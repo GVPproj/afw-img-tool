@@ -84,7 +84,7 @@ for (const replacePhoto of [false, true]) {
       ;(window as any).thumbnailRace = state
       const encode = HTMLCanvasElement.prototype.toBlob
       HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
-        const thumbnail = this.width === 1080 && this.height === 1080 && type === 'image/png'
+        const thumbnail = this.width === 1728 && this.height === 1728 && type === 'image/png'
         encode.call(this, blob => {
           if (thumbnail) state.releases.push(() => callback(blob))
           else callback(blob)
@@ -177,7 +177,7 @@ test('stale processed previews stay hidden during settings updates and failed re
     ;(window as any).previewRace = state
     const encode = HTMLCanvasElement.prototype.toBlob
     HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
-      const thumbnail = this.width === 1080 && this.height === 1080 && type === 'image/png'
+      const thumbnail = this.width === 1728 && this.height === 1728 && type === 'image/png'
       encode.call(this, blob => {
         if (thumbnail) state.releases.push((fail = false) => callback(fail ? null : blob))
         else callback(blob)

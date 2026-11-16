@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { centeredCrop, clampCrop, outputRatio, type OutputFormat, type Crop } from './lib/crop'
-import { loadPhoto, renderThumbnail, type Photo, type Color } from './lib/images'
+import { loadPhoto, renderThumbnail, OUTPUT_WIDTH, type Photo, type Color } from './lib/images'
 import { CropControls } from './CropControls'
 
 type Radio = 'island-city' | 'chir-fm' | 'sunday' | 'cc'
-type Result = { url: string; filename: string; photo: Photo; crop: Crop; format: OutputFormat; radio: Radio; host: string; date: string; startTime: string; finishTime: string; color: Color; duotone: boolean; cornerGradient: boolean }
+type Result = { url: string; filename: string; photo: Photo; crop: Crop; format: OutputFormat; radio: Radio; host: string; date: string; startTime: string; finishTime: string; color: Color; duotone: boolean; dither: boolean; cornerGradient: boolean }
 type Drag = { x: number; y: number; crop: Crop; mode: 'move' | 'resize' }
 
 export function App() {
@@ -13,6 +13,7 @@ export function App() {
   const [radio, setRadio] = useState<Radio>('chir-fm')
   const [color, setColor] = useState<Color>('lime')
   const [duotone, setDuotone] = useState(false)
+  const [dither, setDither] = useState(false)
   const [cornerGradient, setCornerGradient] = useState(false)
   const [host, setHost] = useState('')
   const [date, setDate] = useState('')
@@ -62,12 +63,12 @@ export function App() {
       await preceding
       try {
         if (cancelled || current !== renderRevision.current) return
-        const blob = await renderThumbnail(photo, crop, { format, radio, host, date, startTime, finishTime, color, duotone, cornerGradient })
+        const blob = await renderThumbnail(photo, crop, { format, radio, host, date, startTime, finishTime, color, duotone, dither, cornerGradient })
         if (cancelled || current !== renderRevision.current) return
         const url = URL.createObjectURL(blob)
         if (resultUrl.current) URL.revokeObjectURL(resultUrl.current)
         resultUrl.current = url
-        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, format, radio, host, date, startTime, finishTime, color, duotone, cornerGradient })
+        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, format, radio, host, date, startTime, finishTime, color, duotone, dither, cornerGradient })
       } catch (cause) {
         if (cancelled || current !== renderRevision.current) return
         setError(cause instanceof Error ? cause.message : 'Could not update the preview. Please try again.')
@@ -76,7 +77,7 @@ export function App() {
       }
     }, 32)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [photo, crop, format, radio, host, date, startTime, finishTime, color, duotone, cornerGradient, retry])
+  }, [photo, crop, format, radio, host, date, startTime, finishTime, color, duotone, dither, cornerGradient, retry])
 
   async function selectPhoto(file: File | undefined) {
     if (!file) return
@@ -142,7 +143,7 @@ export function App() {
     }
   }
 
-  const resultReady = result && result.photo === photo && result.crop === crop && result.format === format && result.radio === radio && result.host === host && result.date === date && result.startTime === startTime && result.finishTime === finishTime && result.color === color && result.duotone === duotone && result.cornerGradient === cornerGradient && !error
+  const resultReady = result && result.photo === photo && result.crop === crop && result.format === format && result.radio === radio && result.host === host && result.date === date && result.startTime === startTime && result.finishTime === finishTime && result.color === color && result.duotone === duotone && result.dither === dither && result.cornerGradient === cornerGradient && !error
   const updating = !!photo && !resultReady && !error
   const status = decoding ? 'Opening your photo locally…' : error ? (photo ? 'Preview could not be updated.' : 'Photo could not be opened.') : photo ? (updating ? 'Photo ready. Updating preview…' : 'Photo ready. Your thumbnail is ready to download.') : 'Choose a photo to get started. Everything stays on your device.'
 
@@ -160,7 +161,7 @@ export function App() {
             {photo ? <div className="crop-stage" ref={stage} style={{ maxWidth: `min(100%, calc(max(10rem, 100svh - 27rem) * ${photo.width / photo.height}))`, aspectRatio: `${photo.width} / ${photo.height}` }}>
               <img className="crop-image" src={photo.previewUrl} alt={`Your photo with the selected ${format} crop`} draggable={false} />
               <div className="crop-selection" style={{ left: `${crop.left * 100}%`, top: `${crop.top * 100}%`, width: `${crop.size * 100}%`, height: `${crop.size * photo.width / photo.height / ratio * 100}%` }} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }}>
-                {resultReady && <img className="result-image" src={result.url} alt={result.radio === 'cc' ? 'Processed thumbnail with Community Curation show details' : result.radio === 'sunday' ? 'Processed thumbnail with Sunday Sessions show details' : `Processed thumbnail${result.radio === 'chir-fm' ? ' with CHIR FM show details' : ' with Island City artwork'} and AFW logo`} width="1080" height={Math.round(1080 / outputRatio(result.format))} draggable={false} />}
+                {resultReady && <img className="result-image" src={result.url} alt={result.radio === 'cc' ? 'Processed thumbnail with Community Curation show details' : result.radio === 'sunday' ? 'Processed thumbnail with Sunday Sessions show details' : `Processed thumbnail${result.radio === 'chir-fm' ? ' with CHIR FM show details' : ' with Island City artwork'} and AFW logo`} width={OUTPUT_WIDTH} height={Math.round(OUTPUT_WIDTH / outputRatio(result.format))} draggable={false} />}
                 <span className="crop-grid" aria-hidden="true" /><span className="crop-handle" aria-hidden="true" />
               </div>
             </div> : <button
@@ -222,8 +223,13 @@ export function App() {
               </label>)}
             </div>
             <label className="toggle-label">
+              <span>Diffusion dither</span>
+              <input className="toggle" type="checkbox" aria-describedby="dither-help" checked={dither} onChange={event => { renderRevision.current++; setError(''); setDither(event.target.checked) }} />
+            </label>
+            <p id="dither-help" className="text-sm text-muted">Two-colour dots at export size. Overrides Duotone and grain; turn off to compare.</p>
+            <label className="toggle-label">
               <span>Duotone</span>
-              <input className="toggle" type="checkbox" checked={duotone} onChange={event => { renderRevision.current++; setError(''); setDuotone(event.target.checked) }} />
+              <input className="toggle" type="checkbox" disabled={dither} checked={duotone} onChange={event => { renderRevision.current++; setError(''); setDuotone(event.target.checked) }} />
             </label>
             <label className="toggle-label">
               <span id="corner-gradient-label">Corner gradient</span>

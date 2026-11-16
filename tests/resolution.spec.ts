@@ -17,7 +17,7 @@ test('artwork uses full-density masks and scaled design coordinates in both outp
     }
   })
   await page.goto('/')
-  await page.getByRole('checkbox', { name: 'Diffusion dither', exact: true }).check()
+  await page.getByRole('radio', { name: 'Diffusion Dither', exact: true }).check()
   const buffer = Buffer.from(await page.evaluate(() => {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 32

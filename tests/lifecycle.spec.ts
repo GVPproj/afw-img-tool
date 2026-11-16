@@ -128,7 +128,7 @@ for (const replacePhoto of [false, true]) {
     await size.press('ArrowRight')
     await station.check()
     await page.getByRole('radio', { name: 'Copper', exact: true }).check()
-    await page.getByRole('checkbox', { name: 'Duotone', exact: true }).check()
+    await page.getByRole('radio', { name: 'Duotone', exact: true }).check()
     if (replacePhoto) {
       await page.getByLabel('Photo file').setInputFiles({ name: 'latest.png', mimeType: 'image/png', buffer })
       await expect(page.getByText('latest.png · 900 × 600')).toBeVisible()
@@ -151,7 +151,7 @@ for (const replacePhoto of [false, true]) {
     await expect(page.locator('.result-image')).toHaveAttribute('alt', 'Processed thumbnail with CHIR FM show details and AFW logo')
     await expect(station).toBeChecked()
     await expect(page.getByRole('radio', { name: 'Copper', exact: true })).toBeChecked()
-    await expect(page.getByRole('checkbox', { name: 'Duotone', exact: true })).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'Duotone', exact: true })).toBeChecked()
     expect(await page.evaluate(() => (window as any).thumbnailRace.committed)).toEqual([url])
 
     // Updating an already-completed result must also hide its stale download.
@@ -203,7 +203,7 @@ test('stale processed previews stay hidden during settings updates and failed re
 
   const changes = [
     () => page.getByRole('radio', { name: 'Copper', exact: true }).check(),
-    () => page.getByRole('checkbox', { name: 'Duotone', exact: true }).check(),
+    () => page.getByRole('radio', { name: 'Duotone', exact: true }).check(),
     () => page.getByRole('checkbox', { name: 'Corner gradient', exact: true }).check(),
     () => page.getByRole('radio', { name: 'Island City', exact: true }).check(),
     () => page.getByRole('radio', { name: 'CHIR FM', exact: true }).check(),

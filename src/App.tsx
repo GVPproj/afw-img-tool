@@ -12,8 +12,9 @@ export function App() {
   const [crop, setCrop] = useState<Crop>({ left: 0, top: 0, size: 1 })
   const [radio, setRadio] = useState<Radio>('chir-fm')
   const [color, setColor] = useState<Color>('lime')
-  const [duotone, setDuotone] = useState(false)
-  const [dither, setDither] = useState(false)
+  const [photoEffect, setPhotoEffect] = useState<'normal' | 'dither' | 'duotone'>('normal')
+  const duotone = photoEffect === 'duotone'
+  const dither = photoEffect === 'dither'
   const [cornerGradient, setCornerGradient] = useState(false)
   const [host, setHost] = useState('')
   const [date, setDate] = useState('')
@@ -222,15 +223,14 @@ export function App() {
                 <input className="radio" type="radio" name="color" value={next} checked={color === next} onChange={() => { renderRevision.current++; setError(''); setColor(next) }} />
               </label>)}
             </div>
-            <label className="toggle-label">
-              <span>Diffusion dither</span>
-              <input className="toggle" type="checkbox" aria-describedby="dither-help" checked={dither} onChange={event => { renderRevision.current++; setError(''); setDither(event.target.checked) }} />
-            </label>
-            <p id="dither-help" className="text-sm text-muted">Two-colour dots at export size. Overrides Duotone and grain; turn off to compare.</p>
-            <label className="toggle-label">
-              <span>Duotone</span>
-              <input className="toggle" type="checkbox" disabled={dither} checked={duotone} onChange={event => { renderRevision.current++; setError(''); setDuotone(event.target.checked) }} />
-            </label>
+            <fieldset aria-label="Photo effect">
+              <div className="radio-options">
+                {(['normal', 'dither', 'duotone'] as const).map(next => <label className="toggle-label" key={next}>
+                  <span>{next === 'normal' ? 'Normal' : next === 'dither' ? 'Diffusion Dither' : 'Duotone'}</span>
+                  <input className="radio" type="radio" name="photo-effect" value={next} checked={photoEffect === next} onChange={() => { renderRevision.current++; setError(''); setPhotoEffect(next) }} />
+                </label>)}
+              </div>
+            </fieldset>
             <label className="toggle-label">
               <span id="corner-gradient-label">Corner gradient</span>
               <span id="corner-gradient-help" className='mr-auto'>(Adds Legibility)</span>

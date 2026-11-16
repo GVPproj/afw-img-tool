@@ -7,8 +7,9 @@ const themes = [
   { color: 'Berry', ink: [179, 68, 121], format: '4:5', height: 2160 },
 ]
 
-const ditherToggle = (page: Page) => page.getByRole('checkbox', { name: 'Diffusion dither', exact: true })
-const duotoneToggle = (page: Page) => page.getByRole('checkbox', { name: 'Duotone', exact: true })
+const normalOption = (page: Page) => page.getByRole('radio', { name: 'Normal', exact: true })
+const ditherToggle = (page: Page) => page.getByRole('radio', { name: 'Diffusion Dither', exact: true })
+const duotoneToggle = (page: Page) => page.getByRole('radio', { name: 'Duotone', exact: true })
 const gradientToggle = (page: Page) => page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
 
 async function tonalPhoto(page: Page, solid?: string) {
@@ -148,9 +149,12 @@ for (const { color, ink, format, height } of themes) {
     await page.goto('/')
     const dither = ditherToggle(page)
     const duotone = duotoneToggle(page)
+    await expect(normalOption(page)).toBeChecked()
+    await expect(normalOption(page)).toBeEnabled()
     await expect(dither).not.toBeChecked()
     await expect(dither).toBeEnabled()
     await expect(duotone).not.toBeChecked()
+    await expect(duotone).toBeEnabled()
     await gradientToggle(page).uncheck()
     await page.getByRole('radio', { name: format, exact: true }).check()
     await page.getByRole('radio', { name: color, exact: true }).check()
@@ -162,14 +166,15 @@ for (const { color, ink, format, height } of themes) {
 
     await dither.check()
     url = await ready(page, url)
-    await expect(duotone).toBeDisabled()
-    await expect(duotone).toBeChecked()
+    await expect(normalOption(page)).not.toBeChecked()
+    await expect(duotone).toBeEnabled()
+    await expect(duotone).not.toBeChecked()
     await expect(gradientToggle(page)).toBeEnabled()
     await expect(gradientToggle(page)).not.toBeChecked()
     const treated = await downloadPng(page)
     const pixels = await inspectPhoto(page, treated, ink)
     expectTwoInks(pixels, ink, height)
-    expect(treated.equals(original), 'diffusion must override the old continuous duotone treatment').toBe(false)
+    expect(treated.equals(original), 'diffusion must differ from continuous duotone treatment').toBe(false)
     // Both treatments map the black artwork backdrop to navy. The complete
     // composited regions must therefore match, including smooth edge pixels.
     expect(pixels.artwork).toEqual(before.artwork)
@@ -178,59 +183,67 @@ for (const { color, ink, format, height } of themes) {
       expect(pixels.artwork[index].edgePixels, 'artwork must not itself be quantized').toBeGreaterThan(0)
     }
 
-    await dither.uncheck()
+    await duotone.check()
     url = await ready(page, url)
+    await expect(dither).not.toBeChecked()
     await expect(duotone).toBeEnabled()
     await expect(duotone).toBeChecked()
-    expect((await downloadPng(page)).equals(original), 'off restores the previous duotone PNG byte-for-byte').toBe(true)
+    expect((await downloadPng(page)).equals(original), 'selecting Duotone restores its PNG byte-for-byte').toBe(true)
     await dither.check()
     await ready(page, url)
-    expect((await downloadPng(page)).equals(treated), 'on restores the same diffusion result').toBe(true)
+    expect((await downloadPng(page)).equals(treated), 'selecting Diffusion Dither restores the same result').toBe(true)
   })
 }
 
-test('diffusion overrides either Duotone state without forgetting or mutating either previous output', async ({ page }) => {
+test('Normal, Diffusion Dither, and Duotone are mutually exclusive without mutating previous outputs', async ({ page }) => {
   await page.goto('/')
   const dither = ditherToggle(page)
   const duotone = duotoneToggle(page)
+  await expect(normalOption(page)).toBeChecked()
   await expect(dither).not.toBeChecked()
   await expect(duotone).not.toBeChecked()
+  for (const option of [normalOption(page), dither, duotone]) await expect(option).toBeEnabled()
   await gradientToggle(page).uncheck()
   await page.getByLabel('Photo file').setInputFiles(await tonalPhoto(page))
   let url = await ready(page)
   const untreated = await downloadPng(page)
   await dither.check()
   url = await ready(page, url)
-  await expect(duotone).toBeDisabled()
+  await expect(normalOption(page)).not.toBeChecked()
+  await expect(duotone).toBeEnabled()
   await expect(duotone).not.toBeChecked()
   const diffusion = await downloadPng(page)
   expect(diffusion.equals(untreated)).toBe(false)
 
-  await dither.uncheck()
+  await normalOption(page).check()
   url = await ready(page, url)
+  await expect(dither).not.toBeChecked()
   await expect(duotone).toBeEnabled()
   await expect(duotone).not.toBeChecked()
-  expect((await downloadPng(page)).equals(untreated), 'off restores the original grayscale/grain bytes').toBe(true)
+  expect((await downloadPng(page)).equals(untreated), 'Normal restores the original grayscale/grain bytes').toBe(true)
   await duotone.check()
   url = await ready(page, url)
+  await expect(normalOption(page)).not.toBeChecked()
+  await expect(dither).not.toBeChecked()
   const screened = await downloadPng(page)
   expect(screened.equals(untreated)).toBe(false)
   await dither.check()
   url = await ready(page, url)
-  await expect(duotone).toBeDisabled()
-  await expect(duotone).toBeChecked()
-  expect((await downloadPng(page)).equals(diffusion), 'Duotone must not affect diffusion pixels at all').toBe(true)
-  await dither.uncheck()
+  await expect(duotone).toBeEnabled()
+  await expect(duotone).not.toBeChecked()
+  expect((await downloadPng(page)).equals(diffusion), 'previously selecting Duotone must not affect diffusion pixels').toBe(true)
+  await duotone.check()
   url = await ready(page, url)
+  await expect(dither).not.toBeChecked()
   await expect(duotone).toBeEnabled()
   await expect(duotone).toBeChecked()
   expect((await downloadPng(page)).equals(screened)).toBe(true)
-  await duotone.uncheck()
+  await normalOption(page).check()
   await ready(page, url)
   expect((await downloadPng(page)).equals(untreated), 'neither effect may mutate the source or cached grain').toBe(true)
 })
 
-test('Space toggles diffusion and restores the unchecked, enabled Duotone control', async ({ page }) => {
+test('Space selects Diffusion Dither and ArrowUp selects Normal', async ({ page }) => {
   await page.goto('/')
   const dither = ditherToggle(page)
   const duotone = duotoneToggle(page)
@@ -242,22 +255,24 @@ test('Space toggles diffusion and restores the unchecked, enabled Duotone contro
   await page.keyboard.press('Space')
   await expect(dither).toBeChecked()
   await expect(dither).toBeFocused()
-  await expect(duotone).toBeDisabled()
+  await expect(normalOption(page)).not.toBeChecked()
+  await expect(duotone).toBeEnabled()
   await expect(duotone).not.toBeChecked()
   url = await ready(page, url)
   expectTwoInks(await inspectPhoto(page, await downloadPng(page), themes[0].ink), themes[0].ink, 1728)
   // Downloading moves focus; explicitly return to the keyboard control.
   await dither.focus()
-  await page.keyboard.press('Space')
+  await page.keyboard.press('ArrowUp')
+  await expect(normalOption(page)).toBeChecked()
+  await expect(normalOption(page)).toBeFocused()
   await expect(dither).not.toBeChecked()
-  await expect(dither).toBeFocused()
   await expect(duotone).toBeEnabled()
   await expect(duotone).not.toBeChecked()
   await ready(page, url)
   expect((await downloadPng(page)).equals(original)).toBe(true)
 })
 
-test('station, format, and theme changes retain diffusion and the saved Duotone choice', async ({ page }) => {
+test('station, format, and theme changes retain Diffusion Dither as the only selected effect', async ({ page }) => {
   await page.goto('/')
   const dither = ditherToggle(page)
   const duotone = duotoneToggle(page)
@@ -278,8 +293,10 @@ test('station, format, and theme changes retain diffusion and the saved Duotone 
     await expect(page.getByRole('radio', { name: choice, exact: true })).toBeChecked()
     await expect(dither).toBeChecked()
     await expect(dither).toBeEnabled()
-    await expect(duotone).toBeChecked()
-    await expect(duotone).toBeDisabled()
+    await expect(normalOption(page)).not.toBeChecked()
+    await expect(normalOption(page)).toBeEnabled()
+    await expect(duotone).not.toBeChecked()
+    await expect(duotone).toBeEnabled()
     await expect(gradientToggle(page)).not.toBeChecked()
     await expect(gradientToggle(page)).toBeEnabled()
     ink = themes.find(theme => theme.color === choice)?.ink ?? ink
@@ -292,11 +309,12 @@ test('station, format, and theme changes retain diffusion and the saved Duotone 
     }
   }
   expect((await downloadPng(page)).equals(diffusion), 'returning to CHIR/Square/Lime restores every byte').toBe(true)
-  await dither.uncheck()
+  await duotone.check()
   await ready(page, url)
+  await expect(dither).not.toBeChecked()
   await expect(duotone).toBeChecked()
   await expect(duotone).toBeEnabled()
-  expect((await downloadPng(page)).equals(original), 'the pre-diffusion output survives all setting changes').toBe(true)
+  expect((await downloadPng(page)).equals(original), 'explicitly selecting Duotone reproduces its output after all setting changes').toBe(true)
 })
 
 test('Corner gradient remains independently selectable while diffusion is on', async ({ page }) => {
@@ -314,7 +332,7 @@ test('Corner gradient remains independently selectable while diffusion is on', a
   const shaded = await downloadPng(page)
   expect(shaded.equals(unshaded), 'gradient still changes the diffusion image').toBe(false)
   await expect(dither).toBeChecked()
-  await dither.uncheck()
+  await normalOption(page).check()
   url = await ready(page, url)
   await expect(gradient).toBeChecked()
   await expect(gradient).toBeEnabled()
@@ -329,7 +347,7 @@ test('Corner gradient remains independently selectable while diffusion is on', a
 })
 
 for (const finalDither of [true, false]) {
-  test(`rapid diffusion toggles publish only the final ${finalDither ? 'on' : 'off'} preview/download`, async ({ page }) => {
+  test(`rapid photo effect selections publish only the final ${finalDither ? 'Diffusion Dither' : 'Duotone'} preview/download`, async ({ page }) => {
     await page.goto('/')
     const dither = ditherToggle(page)
     const duotone = duotoneToggle(page)
@@ -342,18 +360,18 @@ for (const finalDither of [true, false]) {
     url = await ready(page, url)
     const diffusion = await downloadPng(page)
     if (finalDither) {
-      await dither.uncheck()
+      await duotone.check()
       url = await ready(page, url)
     }
     // Start opposite the final state. Do not wait for any intermediate render.
     for (const checked of [finalDither, !finalDither, finalDither, !finalDither, finalDither]) {
-      await dither.setChecked(checked)
+      await (checked ? dither : duotone).check()
     }
     await ready(page, url)
     await expect(dither).toBeChecked({ checked: finalDither })
-    await expect(duotone).toBeChecked()
-    if (finalDither) await expect(duotone).toBeDisabled()
-    else await expect(duotone).toBeEnabled()
+    await expect(normalOption(page)).not.toBeChecked()
+    await expect(duotone).toBeChecked({ checked: !finalDither })
+    for (const option of [normalOption(page), dither, duotone]) await expect(option).toBeEnabled()
     await expect(gradientToggle(page)).not.toBeChecked()
     const expected = finalDither ? diffusion : original
     expect((await downloadPng(page)).equals(expected), 'a superseded render must not replace the final selection').toBe(true)

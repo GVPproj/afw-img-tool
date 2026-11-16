@@ -20,7 +20,7 @@ Open **http://127.0.0.1:12302**. The dev server binds only to loopback and fails
 1. Choose a JPEG or PNG.
 2. Choose square (1:1) or portrait (4:5). Move and resize the crop by dragging or using the labelled keyboard controls.
 3. Choose a station and edit its show details. CHIR FM is the default; Sunday and CC use logo-free footers, and CC has editable start/finish times.
-4. Choose Copper, Berry, or Lime (default). Enable Diffusion dither for two-colour dots, or leave it off to use the original processing with optional Duotone. Dithering temporarily overrides Duotone and grain without resetting your Duotone choice; toggle it off to compare. Corner gradient remains independent, and station changes preserve shared settings.
+4. Choose Copper, Berry, or Lime (default). Select Normal (default), Diffusion Dither for two-colour dots without grain, or Duotone. These photo effects are mutually exclusive. Corner gradient remains independent, and station changes preserve shared settings.
 5. Download `<source-stem>_thumb.png`. The preview updates automatically; crop guides are not exported.
 
 HEIC, batch processing, adjustable templates, and offline caching are not supported.
@@ -31,7 +31,7 @@ HEIC, batch processing, adjustable templates, and offline caching are not suppor
 - Browser-normalized EXIF orientation; full-resolution source retained for export. Fonts load before export.
 - Soft-light grain (except with Diffusion dither), station-specific artwork, and wrapped host names. Grain stays stable during the session.
 - Diffusion dither converts the resized photo from sRGB to linear-light luminance, then applies a print-gray gamma of 1.75 before Floyd–Steinberg error diffusion selects navy or the theme color per pixel. This tone curve approximates the supplied Photoshop reference; it does not emulate Photoshop's ICC gray profiles. It runs at final export size, without extra grain; text and logos are added afterwards. Off by default. The PNG remains full-color, not a 1-bit bitmap file. Corner gradient can add intermediate colors after dithering.
-- Duotone maps the photo to navy and the selected theme color with a subtle print texture. With both Duotone and Diffusion dither off, the photo retains its source colors.
+- Duotone maps the photo to navy and the selected theme color with a subtle print texture. Normal retains the photo’s source colors.
 - Corner gradient shades beneath the artwork, affecting only the footer for Sunday and CC. Text and logos retain the selected theme color; contrast depends on the photo and is **not guaranteed to meet WCAG**.
 
 Processing runs on the main thread. Rapid edits are coalesced, and stale renders cannot replace the current preview or download. Very large images, wide-gamut/HDR handling, and real iPhone/Safari validation remain limitations or follow-up work.

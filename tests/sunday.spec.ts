@@ -6,7 +6,7 @@ for (const format of ['Square', '4:5']) {
       await page.goto('/')
       await page.getByRole('radio', { name: 'Sunday', exact: true }).check()
       await page.getByRole('radio', { name: format, exact: true }).check()
-      await page.getByRole('checkbox', { name: 'Duotone', exact: true }).setChecked(duotone)
+      await page.getByRole('radio', { name: duotone ? 'Duotone' : 'Normal', exact: true }).check()
       const gradient = page.getByRole('checkbox', { name: 'Corner gradient', exact: true })
       await expect(gradient).not.toBeChecked()
       await gradient.check()

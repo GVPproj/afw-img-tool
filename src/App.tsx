@@ -227,6 +227,7 @@ export function App() {
             </label>
             <label className="toggle-label">
               <span>Corner gradient</span>
+              <span className='mr-auto'>(Adds Legibility)</span>
               <input className="toggle toggle-primary" type="checkbox" checked={cornerGradient} onChange={event => { renderRevision.current++; setError(''); setCornerGradient(event.target.checked) }} />
             </label>
           </fieldset>

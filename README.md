@@ -1,6 +1,6 @@
 # AFW Image Tools
 
-Browser-only thumbnail maker for Island City, CHIR FM, Sunday Sessions, and Community Curation (CC). Processing on device
+Browser-only thumbnail maker for Island City, CHIR FM, Sunday Sessions, and Community Curation (CC). Processing on device.
 
 ## Local development
 
@@ -12,14 +12,6 @@ pnpm dev
 ```
 
 Open http://127.0.0.1:12302 (loopback only; the port must be free).
-
-## Usage and limitations
-
-Choose a JPEG or PNG, crop by dragging or using the keyboard controls, set the station, show details, colour, and effect, then download `<source-stem>_thumb.png`.
-
-- Output: opaque PNG, 1728 × 1728 square or 1728 × 2160 portrait. Transparency is flattened onto black.
-- Dither and duotone use navy and the selected theme colour. Corner gradient is independent.
-- Contrast depends on the photo; WCAG compliance is not guaranteed.
 
 ## Checks
 

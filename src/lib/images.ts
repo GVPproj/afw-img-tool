@@ -425,7 +425,7 @@ function drawFooterDetails(context: CanvasRenderingContext2D, host: string, date
     const label = cc ? formattedDate : formattedDate.replace(',', '');
     context.fillText(label, right, rightTop, 478);
   }
-  const time = cc ? [formatTime(startTime), formatTime(finishTime)].filter(Boolean).join('–') : '10:15am–1:15pm';
+  const time = [formatTime(startTime || (cc ? '' : '10:15')), formatTime(finishTime || (cc ? '' : '13:15'))].filter(Boolean).join('–');
   if (time) context.fillText(time, right, rightTop + lineHeight, 478);
   context.fillText('Cassette Café', right, rightTop + 2 * lineHeight, 478);
 }

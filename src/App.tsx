@@ -219,7 +219,7 @@ export function App() {
                 <input id="show-host" className="input" type="text" maxLength={120} placeholder="Christina Novak & Emily McMartin" value={host} onChange={event => { renderRevision.current++; setError(''); setHost(event.target.value) }} />
               </label>}
             </div>
-            {radio === 'cc' && <div className="time-fields">
+            {(radio === 'cc' || radio === 'sunday') && <div className="time-fields">
               <label className="show-field" htmlFor="start-time">Start time
                 <input id="start-time" className="input" type="time" value={startTime} onChange={event => { renderRevision.current++; setError(''); setStartTime(event.target.value) }} />
               </label>

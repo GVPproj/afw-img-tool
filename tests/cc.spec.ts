@@ -47,9 +47,10 @@ for (const format of ['Square', '4:5']) {
     expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('12:05am–12:30pm')
 
     await page.getByRole('radio', { name: 'Sunday', exact: true }).check()
-    await expect(page.getByLabel('Start time', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('Start time', { exact: true })).toHaveValue('00:05')
+    await expect(page.getByLabel('Finish time', { exact: true })).toHaveValue('12:30')
     await expect(download).toBeVisible()
-    expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('10:15am–1:15pm')
+    expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('12:05am–12:30pm')
     await page.getByRole('radio', { name: 'CC', exact: true }).check()
     await expect(page.getByLabel('Start time', { exact: true })).toHaveValue('00:05')
     await expect(page.getByLabel('Finish time', { exact: true })).toHaveValue('12:30')

@@ -77,5 +77,18 @@ for (const format of ['Square', '4:5']) {
     await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', format === 'Square' ? 1728 : 2160)
     expect(lines[0].y).toBe((format === 'Square' ? 1080 : 1350) - 184)
     expect(lines[3].y).toBe(lines[0].y)
+
+    const download = page.getByRole('link', { name: 'Download PNG' })
+    await page.getByLabel('Start time', { exact: true }).fill('00:05')
+    await page.getByLabel('Finish time', { exact: true }).fill('12:30')
+    await expect(download).toBeVisible()
+    expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('12:05am–12:30pm')
+
+    await page.getByLabel('Start time', { exact: true }).fill('')
+    await expect(download).toBeVisible()
+    expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('10:15am–12:30pm')
+    await page.getByLabel('Finish time', { exact: true }).fill('')
+    await expect(download).toBeVisible()
+    expect(await page.evaluate(() => (window as any).textCalls.slice(-2)[0].text)).toBe('10:15am–1:15pm')
   })
 }

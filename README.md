@@ -15,18 +15,6 @@ pnpm dev
 
 Open **http://127.0.0.1:12302**. The dev server binds only to loopback and fails if the port is occupied.
 
-### Tailscale access
-
-On the configured host, the app is also available at **https://asahi-mini.tail40c3ca.ts.net:12302** while Vite is running. Tailscale Serve proxies HTTP/WebSocket traffic to Vite over HTTPS; access is tailnet-only, not a public Funnel.
-
-One-time setup:
-
-```sh
-tailscale serve --bg --https=12302 http://127.0.0.1:12302
-```
-
-The proxy persists independently of Vite. Stop `pnpm dev` to stop serving the app; remove the proxy with `tailscale serve --https=12302 off`. On another host, update `server.allowedHosts` in `vite.config.ts` to its exact Tailscale DNS name.
-
 ## Usage
 
 1. Choose a JPEG or PNG.

@@ -1,10 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { redact } from '@tanstack/redact/vite'
 
 export default defineConfig({
-  plugins: [react(), ...(process.env.NATIVE_REACT ? [] : [redact()]), tailwindcss()],
+  plugins: [react(), tailwindcss()],
   server: {
     host: '127.0.0.1',
     port: 12302,

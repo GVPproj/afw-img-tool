@@ -26,8 +26,6 @@ pnpm test:e2e --project chromium --project firefox --project mobile
 
 Browser tests use the production build. Mobile projects are emulated; real iPhone/Safari validation is still needed.
 
-For native React instead of Redact, prefix `pnpm dev` or `pnpm test:e2e --project chromium` with `NATIVE_REACT=1`.
-
 ## Cloudflare Pages
 
 Connect the repository to a **Pages** project (not Workers): Vite preset, repository root, build command `pnpm build`, output `dist`, and `NODE_VERSION=24`. Use the pinned pnpm version; no deploy command or runtime secrets are needed.

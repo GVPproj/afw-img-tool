@@ -5,6 +5,16 @@ for (const station of ['CHIR FM', 'Sunday']) {
     for (const kind of ['multiword', 'unbroken', 'exceptional']) {
       test(`${station} ${format} wraps ${kind} hosts without overflow`, async ({ page }) => {
         await page.addInitScript(() => {
+          const originalDrawImage = CanvasRenderingContext2D.prototype.drawImage
+          ;(window as any).logoCalls = []
+          CanvasRenderingContext2D.prototype.drawImage = function (...args: any[]) {
+            // Trimmed artwork is drawn with the five-argument overload in design units.
+            if (args.length === 5) {
+              const [, x, y, width, height] = args
+              ;(window as any).logoCalls.push({ x, y, width, height, scale: this.getTransform().a })
+            }
+            originalDrawImage.apply(this, args as any)
+          }
           const original = CanvasRenderingContext2D.prototype.fillText
           ;(window as any).textCalls = []
           CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) {
@@ -65,7 +75,12 @@ for (const station of ['CHIR FM', 'Sunday']) {
           expect(hosts.at(-1).y + 54 * hosts.at(-1).fontSize / 44).toBeCloseTo(height - 22, 2)
         } else {
           expect(calls.at(-1).top).toBeGreaterThanOrEqual(hosts.at(-1).bottom)
-          expect(calls.at(-1).bottom).toBeLessThan(height - 218)
+          const logo = await page.evaluate(() => (window as any).logoCalls.findLast((call: any) => call.x === 24 && call.width === 198))
+          expect(logo).toBeDefined()
+          expect(logo.scale).toBeCloseTo(1.6)
+          expect(logo.y + logo.height).toBe(height - 20)
+          // Use the trimmed logo's actual top, not its width as an assumed height.
+          expect(calls.at(-1).bottom + 20).toBeLessThanOrEqual(logo.y)
         }
       })
     }

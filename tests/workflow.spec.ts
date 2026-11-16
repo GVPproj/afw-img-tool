@@ -337,11 +337,15 @@ test('CHIR FM shows date and host controls and renders show details without Isla
     }
   })
   await page.goto('/')
+  await page.evaluate(() => document.fonts.ready)
+  await expect(page.getByRole('group', { name: 'Radio', exact: true }).locator('.toggle-label'))
+    .toHaveText(['CHIR FM', 'Sunday', 'CC', 'Island City'])
   const island = (await page.getByRole('radio', { name: 'Island City', exact: true }).boundingBox())!
   const chir = (await page.getByRole('radio', { name: 'CHIR FM', exact: true }).boundingBox())!
   const aspect = (await page.getByRole('radio', { name: 'Square', exact: true }).boundingBox())!
-  expect(Math.abs(island.y - chir.y)).toBeLessThan(1)
-  expect(chir.x).toBeLessThan(island.x)
+  // Station choices wrap onto another row on narrow screens.
+  if (Math.abs(island.y - chir.y) < 1) expect(chir.x + chir.width).toBeLessThanOrEqual(island.x)
+  else expect(island.y).toBeGreaterThanOrEqual(chir.y + chir.height)
   expect(aspect.y).toBeGreaterThan(island.y + island.height)
   await expect(page.getByRole('radio', { name: 'CHIR FM', exact: true })).toBeChecked()
   await expect(page.locator('.settings-legend', { hasText: 'Radio' })).toHaveCount(0)

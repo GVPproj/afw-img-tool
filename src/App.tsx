@@ -155,8 +155,7 @@ export function App() {
           <fieldset className="upload-fieldset">
             <legend>Choose a photo</legend>
             <label className="sr-only" htmlFor="photo">Photo file</label>
-            <input ref={fileInput} id="photo" className="file-input" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" aria-describedby="format-help" onChange={event => { void selectPhoto(event.target.files?.[0]) }} />
-            <p id="format-help">JPEG or PNG. HEIC isn’t supported yet.</p>
+            <input ref={fileInput} id="photo" className="file-input" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" onChange={event => { void selectPhoto(event.target.files?.[0]) }} />
           </fieldset>
           <div className="preview-area">
             {photo ? <div className="crop-stage" ref={stage} style={{ maxWidth: `min(100%, calc(max(10rem, 100svh - 27rem) * ${photo.width / photo.height}))`, aspectRatio: `${photo.width} / ${photo.height}` }}>

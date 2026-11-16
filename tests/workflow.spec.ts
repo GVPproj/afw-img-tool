@@ -265,6 +265,7 @@ for (const orientation of [2, 6]) {
 
 test('Island City toggles actual preview/download pixels; AFW and grain stay stable', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('radio', { name: 'Island City', exact: true }).check()
   const overlay = page.getByRole('checkbox', { name: 'Island City overlay' })
   await expect(overlay).toBeChecked()
   await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
@@ -319,6 +320,100 @@ test('Island City toggles actual preview/download pixels; AFW and grain stay sta
   expect(comparison.changedTopLeft).toBeGreaterThan(1000)
   expect(comparison.changedElsewhere, 'AFW and grain must not change when toggling Island City').toBe(0)
   expect(comparison.restoredDifferences, 'restoring the overlay must reproduce every pixel').toBe(0)
+})
+
+test('CHIR FM shows date and host controls and renders show details without Island City artwork', async ({ page }) => {
+  await page.addInitScript(() => {
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    ;(window as any).showText = []
+    CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) {
+      ;(window as any).showText.push({ text, x, y })
+      if (maxWidth === undefined) fillText.call(this, text, x, y)
+      else fillText.call(this, text, x, y, maxWidth)
+    }
+  })
+  await page.goto('/')
+  const island = (await page.getByRole('radio', { name: 'Island City', exact: true }).boundingBox())!
+  const chir = (await page.getByRole('radio', { name: 'CHIR FM', exact: true }).boundingBox())!
+  const aspect = (await page.getByRole('radio', { name: 'Square', exact: true }).boundingBox())!
+  expect(Math.abs(island.y - chir.y)).toBeLessThan(1)
+  expect(chir.x).toBeLessThan(island.x)
+  expect(aspect.y).toBeGreaterThan(island.y + island.height)
+  await expect(page.getByRole('radio', { name: 'CHIR FM', exact: true })).toBeChecked()
+  await expect(page.locator('.settings-legend', { hasText: 'Radio' })).toHaveCount(0)
+  await expect(page.getByLabel('Host name')).toBeVisible()
+  await expect(page.getByLabel('Show date')).toHaveAttribute('type', 'date')
+  await expect(page.getByLabel('Show date')).toHaveClass(/input/)
+  await expect(page.getByLabel('Island City overlay')).toHaveCount(0)
+  await page.getByLabel('Show date').fill('2026-11-10')
+  await page.getByLabel('Host name').fill('Christina Novak & Emily McMartin')
+  await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
+  let url = await liveResult(page)
+  await downloadedPixels(page)
+  const text = await page.evaluate(() => (window as any).showText)
+  expect(text).toEqual(expect.arrayContaining([
+    { text: 'A Friendly Wave Radio', x: 16, y: 16 },
+    { text: 'Christina Novak &', x: 16, y: 66 },
+    { text: 'Emily McMartin', x: 16, y: 116 },
+    { text: 'November 10, 2026', x: 16, y: 166 },
+    { text: 'Tuesdays at 7:00pm', x: 620, y: 16 },
+    { text: '107.9 fm / 102.1 fm', x: 620, y: 66 },
+    { text: 'Chir.fm', x: 620, y: 116 },
+  ]))
+  await page.getByLabel('Host name').fill('Another Host')
+  url = await liveResult(page, url)
+  await page.getByLabel('Show date').fill('2026-12-01')
+  url = await liveResult(page, url)
+  await page.getByRole('radio', { name: '4:5', exact: true }).check()
+  url = await liveResult(page, url)
+  await expect(page.locator('.result-image')).toHaveJSProperty('naturalHeight', 1350)
+  await page.getByRole('radio', { name: 'Island City', exact: true }).check()
+  url = await liveResult(page, url)
+  await expect(page.getByLabel('Show date')).toHaveCount(0)
+  await expect(page.getByLabel('Island City overlay')).toBeChecked()
+  await page.getByRole('radio', { name: 'CHIR FM', exact: true }).check()
+  await liveResult(page, url)
+  await expect(page.getByLabel('Show date')).toHaveValue('2026-12-01')
+  await expect(page.getByLabel('Host name')).toHaveValue('Another Host')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('CHIR vector logo stays inset at bottom left in both formats and is absent for Island City', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Photo file').setInputFiles(await photoFile(page))
+  let url = await liveResult(page)
+  const logoBounds = () => page.locator('.result-image').evaluate(async (image: HTMLImageElement) => {
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(image, 0, 0)
+    const { data } = ctx.getImageData(0, canvas.height - 200, 300, 200)
+    const xs: number[] = [], ys: number[] = []
+    for (let y = 0; y < 200; y++) for (let x = 0; x < 300; x++) {
+      const i = (y * 300 + x) * 4
+      if (data[i] === 226 && data[i + 1] === 255 && data[i + 2] === 120) {
+        xs.push(x)
+        ys.push(y)
+      }
+    }
+    return xs.length ? { left: Math.min(...xs), right: Math.max(...xs), bottom: 199 - Math.max(...ys), count: xs.length } : null
+  })
+  for (const format of ['Square', '4:5']) {
+    await page.getByRole('radio', { name: format, exact: true }).check()
+    if (format === '4:5') url = await liveResult(page, url)
+    const bounds = (await logoBounds())!
+    expect(bounds.count).toBeGreaterThan(5000)
+    expect(bounds.left).toBeGreaterThanOrEqual(24)
+    expect(bounds.left).toBeLessThan(27)
+    expect(bounds.right).toBeLessThan(222)
+    expect(bounds.bottom).toBeGreaterThanOrEqual(20)
+    expect(bounds.bottom).toBeLessThan(23)
+  }
+  await page.getByRole('radio', { name: 'Island City', exact: true }).check()
+  await liveResult(page, url)
+  expect(await logoBounds()).toBeNull()
 })
 
 test('one workspace puts preview left of settings above 900px and stacks without mobile overflow', async ({ page }) => {

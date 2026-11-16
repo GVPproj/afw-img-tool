@@ -3,13 +3,17 @@ import { centeredCrop, clampCrop, outputRatio, type OutputFormat, type Crop } fr
 import { loadPhoto, renderThumbnail, type Photo } from './lib/images'
 import { CropControls } from './CropControls'
 
-type Result = { url: string; filename: string; photo: Photo; crop: Crop; islandCity: boolean; format: OutputFormat }
+type Radio = 'island-city' | 'chir-fm'
+type Result = { url: string; filename: string; photo: Photo; crop: Crop; islandCity: boolean; format: OutputFormat; radio: Radio; host: string; date: string }
 type Drag = { x: number; y: number; crop: Crop; mode: 'move' | 'resize' }
 
 export function App() {
   const [photo, setPhoto] = useState<Photo | null>(null)
   const [crop, setCrop] = useState<Crop>({ left: 0, top: 0, size: 1 })
   const [islandCity, setIslandCity] = useState(true)
+  const [radio, setRadio] = useState<Radio>('chir-fm')
+  const [host, setHost] = useState('')
+  const [date, setDate] = useState('')
   const [format, setFormat] = useState<OutputFormat>('square')
   const selectedFormat = useRef<OutputFormat>('square')
   const ratio = outputRatio(format)
@@ -54,12 +58,12 @@ export function App() {
       await preceding
       try {
         if (cancelled || current !== renderRevision.current) return
-        const blob = await renderThumbnail(photo, crop, { islandCity, format })
+        const blob = await renderThumbnail(photo, crop, { islandCity, format, radio, host, date })
         if (cancelled || current !== renderRevision.current) return
         const url = URL.createObjectURL(blob)
         if (resultUrl.current) URL.revokeObjectURL(resultUrl.current)
         resultUrl.current = url
-        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, islandCity, format })
+        setResult({ url, filename: `${photo.name.replace(/\.[^.]+$/, '') || 'photo'}_thumb.png`, photo, crop, islandCity, format, radio, host, date })
       } catch (cause) {
         if (cancelled || current !== renderRevision.current) return
         setError(cause instanceof Error ? cause.message : 'Could not update the preview. Please try again.')
@@ -68,7 +72,7 @@ export function App() {
       }
     }, 32)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [photo, crop, islandCity, format, retry])
+  }, [photo, crop, islandCity, format, radio, host, date, retry])
 
   async function selectPhoto(file: File | undefined) {
     if (!file) return
@@ -134,13 +138,13 @@ export function App() {
     }
   }
 
-  const resultReady = result && result.photo === photo && result.crop === crop && result.islandCity === islandCity && result.format === format && !error
+  const resultReady = result && result.photo === photo && result.crop === crop && result.islandCity === islandCity && result.format === format && result.radio === radio && result.host === host && result.date === date && !error
   const updating = !!photo && !resultReady && !error
   const status = decoding ? 'Opening your photo locally…' : error ? (photo ? 'Preview could not be updated.' : 'Photo could not be opened.') : photo ? (updating ? 'Photo ready. Updating preview…' : 'Photo ready. Your thumbnail is ready to download.') : 'Choose a photo to get started. Everything stays on your device.'
 
   return (
     <main className="app-shell">
-      <h1 className="page-title">ISLAND CITY THUMBNAIL</h1>
+      <h1 className="page-title">AFW RADIO THUMBNAIL</h1>
       <section className="workspace" aria-label="Thumbnail editor">
         <div className="preview-panel">
           <fieldset className="fieldset upload-fieldset">
@@ -153,7 +157,7 @@ export function App() {
             {photo ? <div className="crop-stage" ref={stage} style={{ maxWidth: `min(100%, calc(max(10rem, 100svh - 27rem) * ${photo.width / photo.height}))`, aspectRatio: `${photo.width} / ${photo.height}` }}>
               <img className="crop-image" src={photo.previewUrl} alt={`Your photo with the selected ${format} crop`} draggable={false} />
               <div className="crop-selection" style={{ left: `${crop.left * 100}%`, top: `${crop.top * 100}%`, width: `${crop.size * 100}%`, height: `${crop.size * photo.width / photo.height / ratio * 100}%` }} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }}>
-                {result && <img className="result-image" src={result.url} alt={`Processed thumbnail${result.islandCity ? ' with Island City artwork' : ''} and AFW logo`} width="1080" height={Math.round(1080 / outputRatio(result.format))} draggable={false} />}
+                {result && <img className="result-image" src={result.url} alt={`Processed thumbnail${result.radio === 'chir-fm' ? ' with CHIR FM show details' : result.islandCity ? ' with Island City artwork' : ''} and AFW logo`} width="1080" height={Math.round(1080 / outputRatio(result.format))} draggable={false} />}
                 <span className="crop-grid" aria-hidden="true" /><span className="crop-handle" aria-hidden="true" />
               </div>
             </div> : <button
@@ -183,6 +187,22 @@ export function App() {
           {photo && <p className="file-meta">{photo.name} · {photo.width} × {photo.height}</p>}
         </div>
         <aside className="settings-panel" aria-label="Settings">
+          <fieldset className="artwork-controls" aria-label="Radio">
+            <div className="radio-options">
+            {(['chir-fm', 'island-city'] as const).map(next => <label className="toggle-label" key={next}>
+              <span>{next === 'island-city' ? 'Island City' : 'CHIR FM'}</span>
+              <input className="radio radio-primary" type="radio" name="radio-station" value={next} checked={radio === next} onChange={() => { renderRevision.current++; setError(''); setRadio(next) }} />
+            </label>)}
+            </div>
+            {radio === 'chir-fm' && <>
+              <label className="show-field" htmlFor="show-date">Show date
+                <input id="show-date" className="input input-bordered" type="date" value={date} onChange={event => { renderRevision.current++; setError(''); setDate(event.target.value) }} />
+              </label>
+              <label className="show-field" htmlFor="show-host">Host name
+                <input id="show-host" className="input input-bordered" type="text" maxLength={120} placeholder="Christina Novak & Emily McMartin" value={host} onChange={event => { renderRevision.current++; setError(''); setHost(event.target.value) }} />
+              </label>
+            </>}
+          </fieldset>
           <fieldset className="artwork-controls format-controls" aria-label="Output format">
             {(['square', 'portrait'] as const).map(next => <label className="toggle-label" key={next}>
               <span>{next === 'square' ? 'Square' : '4:5'}</span>
@@ -195,11 +215,10 @@ export function App() {
                 if (photo) setCrop(centeredCrop(photo, outputRatio(next)))
               }} />
             </label>)}
-            <p className="panel-description">{format === 'portrait' ? 'Portrait · 1080 × 1350 PNG' : 'Square · 1080 × 1080 PNG'}</p>
           </fieldset>
           <fieldset className="artwork-controls">
             <legend className="settings-legend">Artwork</legend>
-            <label className="toggle-label" htmlFor="island-city"><span>Island City overlay</span><input id="island-city" className="toggle toggle-primary" type="checkbox" checked={islandCity} onChange={event => { renderRevision.current++; setError(''); setIslandCity(event.target.checked) }} /></label>
+            {radio === 'island-city' && <label className="toggle-label" htmlFor="island-city"><span>Island City overlay</span><input id="island-city" className="toggle toggle-primary" type="checkbox" checked={islandCity} onChange={event => { renderRevision.current++; setError(''); setIslandCity(event.target.checked) }} /></label>}
             <p className="panel-description">AFW logo and film grain are always included.</p>
           </fieldset>
           <div className="panel-actions">{resultReady && !decoding ? <a className="btn btn-primary" href={result.url} download={result.filename}>Download PNG <span aria-hidden="true">↓</span></a> : <button className="btn btn-primary" disabled aria-busy={decoding || updating}>Download PNG {decoding || updating ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <span aria-hidden="true">↓</span>}</button>}</div>

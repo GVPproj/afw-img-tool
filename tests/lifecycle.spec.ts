@@ -98,6 +98,7 @@ for (const replacePhoto of [false, true]) {
       }
     })
     await page.goto('/')
+    await page.getByRole('radio', { name: 'Island City', exact: true }).check()
     const buffer = Buffer.from(await page.evaluate(() => {
       const canvas = document.createElement('canvas')
       canvas.width = 900

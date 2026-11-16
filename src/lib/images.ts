@@ -188,6 +188,7 @@ function cachedLogo(url: string, width: number) {
 }
 
 const loadIslandLogo = cachedLogo(new URL('../assets/island-city.svg', import.meta.url).href, 324);
+const loadChirLogo = cachedLogo(new URL('../assets/chir-fm.svg', import.meta.url).href, 198);
 const loadAfwLogo = cachedLogo(new URL('../assets/Logo-Mark_AFW.svg', import.meta.url).href, 454);
 
 // One fixed 1080px noise canvas shared by all renders, with no photo references.
@@ -235,19 +236,76 @@ function addGrain(context: CanvasRenderingContext2D) {
   }
 }
 
+function drawChirDetails(context: CanvasRenderingContext2D, host: string, date: string) {
+  context.fillStyle = '#e2ff78';
+  context.font = '44px Iosevka';
+  context.textBaseline = 'top';
+  const lineHeight = 50;
+  const left = 16;
+  const right = 620;
+  context.fillText('A Friendly Wave Radio', left, 16);
+  ['Tuesdays at 7:00pm', '107.9 fm / 102.1 fm', 'Chir.fm'].forEach((line, index) => {
+    context.fillText(line, right, 16 + index * lineHeight);
+  });
+
+  // Wrap host names within the left column, including unbroken long names.
+  // Shrink unusually long entries rather than clipping or overlapping the schedule.
+  let lines: string[] = [];
+  let fontSize = 44;
+  do {
+    context.font = `${fontSize}px Iosevka`;
+    lines = [];
+    let line = '';
+    for (const word of host.trim().split(/\s+/).filter(Boolean)) {
+      if (line && context.measureText(`${line} ${word}`).width > 500) {
+        lines.push(line);
+        line = '';
+      }
+      for (const character of (line ? ' ' : '') + word) {
+        if (context.measureText(line + character).width > 500) {
+          lines.push(line);
+          line = '';
+        }
+        line += character;
+      }
+    }
+    if (line) lines.push(line);
+    if (lines.length <= 3) break;
+    fontSize -= 2;
+  } while (fontSize >= 20);
+  lines.forEach((line, index) => context.fillText(line, left, 66 + index * lineHeight));
+
+  // Parse calendar components locally; UTC parsing can shift the displayed day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [year, month, day] = date.split('-').map(Number);
+    const showDate = new Date(0);
+    showDate.setFullYear(year, month - 1, day);
+    context.font = '44px Iosevka';
+    context.fillText(showDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), left, 66 + lines.length * lineHeight);
+  }
+}
+
 /** Opaque 1080px PNG. Stable grain never covers logos; AFW is always included. */
 export async function renderThumbnail(
   photo: Photo,
   crop: Crop,
-  { islandCity = true, format = 'square' }: { islandCity?: boolean; format?: OutputFormat } = {},
+  { islandCity = true, format = 'square', radio = 'island-city', host = '', date = '' }: {
+    islandCity?: boolean;
+    format?: OutputFormat;
+    radio?: 'island-city' | 'chir-fm';
+    host?: string;
+    date?: string;
+  } = {},
 ): Promise<Blob> {
   const ratio = outputRatio(format);
   const height = Math.round(SIZE / ratio);
   const normalized = clampCrop(crop, photo, ratio);
-  const [island, afw] = await Promise.all([
-    islandCity ? loadIslandLogo() : undefined,
+  const [island, afw, chir] = await Promise.all([
+    radio === 'island-city' && islandCity ? loadIslandLogo() : undefined,
     loadAfwLogo(),
+    radio === 'chir-fm' ? loadChirLogo() : undefined,
   ]);
+  if (radio === 'chir-fm') await document.fonts.load('44px Iosevka');
   const { element, context } = canvas(SIZE, height, true);
   try {
     const side = Math.max(1, Math.min(Math.round(normalized.size * photo.width), photo.width, photo.height * ratio));
@@ -263,6 +321,8 @@ export async function renderThumbnail(
     }
     addGrain(context);
     if (island) context.drawImage(island, 49, 49);
+    if (radio === 'chir-fm') drawChirDetails(context, host, date);
+    if (chir) context.drawImage(chir, 24, height - chir.height - 20);
     context.drawImage(afw, SIZE - afw.width, height - afw.height);
     return await toBlob(element);
   } finally {

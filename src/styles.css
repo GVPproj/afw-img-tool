@@ -388,6 +388,16 @@
   margin-block: 0.75rem;
 }
 
+.radio-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.radio-options .toggle-label {
+  gap: 0.5rem;
+}
+
 .format-controls {
   grid-template-columns: repeat(2, max-content);
   column-gap: 2rem;
@@ -404,6 +414,19 @@
   gap: 1rem;
   min-height: 44px;
   cursor: pointer;
+}
+
+.show-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.show-field .input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  font: inherit;
 }
 
 .panel-actions {

@@ -1,4 +1,4 @@
-# AFW Image Tools
+# AFW Image Tool
 
 Browser-only thumbnail maker for Island City, CHIR FM, Sunday Sessions, and Community Curation (CC). Processing on device.
 
@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://127.0.0.1:12302 (loopback only; the port must be free).
+Open http://127.0.0.1:12302.
 
 ## Checks
 
@@ -28,6 +28,4 @@ Browser tests use the production build. Mobile projects are emulated; real iPhon
 
 ## Cloudflare Pages
 
-Connect the repository to a **Pages** project (not Workers): Vite preset, repository root, build command `pnpm build`, output `dist`, and `NODE_VERSION=24`. Use the pinned pnpm version; no deploy command or runtime secrets are needed.
-
-Hosting is public by default; use Cloudflare Access to restrict it.
+Deploys on push to https://image-tool.afriendlywave.com

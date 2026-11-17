@@ -13,6 +13,35 @@ test('empty editor preserves its AFW controls on desktop and mobile', async ({ p
   }
 })
 
+test('vertical layout stacks radio options and separates control sets', async ({ page }) => {
+  await page.goto('/')
+
+  for (const width of [390, 920, 921, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const stacked = width <= 920
+    await expect(page.locator('.radio-options').first()).toHaveCSS('flex-direction', stacked ? 'column' : 'row')
+    for (const name of ['output-format', 'radio-station', 'color', 'photo-effect']) {
+      const options = page.locator(`input[name="${name}"]`)
+      const boxes = await options.evaluateAll(inputs => inputs.map(input => {
+        const { x, y, height } = input.getBoundingClientRect()
+        return { x, y, height }
+      }))
+      for (let i = 1; i < boxes.length; i++) {
+        if (stacked) {
+          expect(boxes[i].x).toBeCloseTo(boxes[0].x, 0)
+          expect(boxes[i].y).toBeGreaterThanOrEqual(boxes[i - 1].y + boxes[i - 1].height)
+        } else if (width === 1280) {
+          expect(boxes[i].y).toBeCloseTo(boxes[0].y, 0)
+        }
+      }
+    }
+    for (const selector of ['.show-details-fields', '[aria-label="Color"]', '[aria-label="Photo effect"]', '[aria-label="Color"] > .toggle-label']) {
+      await expect(page.locator(selector)).toHaveCSS('border-top-width', stacked ? '1px' : '0px')
+    }
+    await expect(page.locator('.format-controls')).toHaveCSS('border-bottom-width', stacked ? '1px' : '0px')
+  }
+})
+
 test('native controls keep keyboard selection, visible focus, and editable dates and times', async ({ page }) => {
   await page.goto('/')
   const colors = page.getByRole('group', { name: 'Color', exact: true })

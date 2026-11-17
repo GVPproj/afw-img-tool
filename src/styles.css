@@ -429,7 +429,7 @@
   }
 }
 
-@media (width > 900px) {
+@media (width > 920px) {
   .show-details-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -444,9 +444,25 @@
   }
 }
 
-@media (width <= 900px) {
+@media (width <= 920px) {
   .app-shell {
     padding: 0.75rem;
+  }
+
+  .radio-options {
+    flex-direction: column;
+  }
+
+  .format-controls {
+    grid-template-columns: 1fr;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-surface-raised);
+  }
+
+  .settings-panel .artwork-controls > * + *,
+  .settings-panel .artwork-controls + .artwork-controls {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-surface-raised);
   }
 }
 
